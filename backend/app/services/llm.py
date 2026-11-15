@@ -178,6 +178,170 @@ class HttpTransport:
         )
 
 
+# ---------------- streaming ----------------
+def _sse_lines(resp: httpx.Response):
+    """Yield (event, data) tuples from an SSE body."""
+    event, data = None, []
+    for line in resp.iter_lines():
+        if line == "":
+            if data:
+                yield event, "\n".join(data)
+            event, data = None, []
+        elif line.startswith("event:"):
+            event = line[6:].strip()
+        elif line.startswith("data:"):
+            data.append(line[5:].strip())
+    if data:
+        yield event, "\n".join(data)
+
+
+class StreamingMixin:
+    """Adds chat_stream() to HttpTransport. Yields text deltas; final item is a ChatResult with usage."""
+
+    def chat_stream(
+        self, *, provider, info, api_key, system, messages, max_output_tokens, temperature, base_url_override=""
+    ):  # noqa: ANN001
+        base = (base_url_override or provider.base_url).rstrip("/")
+        if not base:
+            raise ChatError(f"Provider '{provider.key}' has no base_url; set one on the token.")
+        started = time.perf_counter()
+        if provider.style == "anthropic":
+            gen = self._anthropic_stream(
+                base, provider, info, api_key, system, messages, max_output_tokens, temperature
+            )
+        elif provider.style == "google":
+            gen = self._google_stream(base, provider, info, api_key, system, messages, max_output_tokens, temperature)
+        else:
+            gen = self._openai_stream(base, provider, info, api_key, system, messages, max_output_tokens, temperature)
+        for item in gen:
+            if isinstance(item, ChatResult):
+                item.latency_ms = int((time.perf_counter() - started) * 1000)
+            yield item
+
+    def _openai_stream(self, base, provider, info, api_key, system, messages, max_out, temperature):  # noqa: ANN001
+        import json
+
+        body: dict = {
+            "model": info.model,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            "messages": [{"role": "system", "content": system}, *messages] if system else messages,
+        }
+        body["max_completion_tokens" if info.max_completion_tokens else "max_tokens"] = max_out
+        if temperature is not None and not info.no_temperature:
+            body["temperature"] = temperature
+        parts: list[str] = []
+        tin = tout = 0
+        with (
+            httpx.Client(timeout=self.timeout) as client,
+            client.stream(
+                "POST", f"{base}{provider.chat_path}", headers=_headers(provider, api_key), json=body
+            ) as resp,
+        ):
+            if resp.status_code >= 400:
+                resp.read()
+                _raise_for(resp)
+            for _ev, data in _sse_lines(resp):
+                if data == "[DONE]":
+                    break
+                try:
+                    obj = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("usage"):
+                    tin = int(obj["usage"].get("prompt_tokens") or 0)
+                    tout = int(obj["usage"].get("completion_tokens") or 0)
+                for ch in obj.get("choices") or []:
+                    delta = (ch.get("delta") or {}).get("content")
+                    if delta:
+                        parts.append(delta)
+                        yield delta
+        yield ChatResult(content="".join(parts), tokens_in=tin, tokens_out=tout, latency_ms=0, raw_model=info.model)
+
+    def _anthropic_stream(self, base, provider, info, api_key, system, messages, max_out, temperature):  # noqa: ANN001
+        import json
+
+        body: dict = {"model": info.model, "max_tokens": max_out, "messages": messages, "stream": True}
+        if system:
+            body["system"] = system
+        if temperature is not None and not info.no_temperature:
+            body["temperature"] = temperature
+        parts: list[str] = []
+        tin = tout = 0
+        with (
+            httpx.Client(timeout=self.timeout) as client,
+            client.stream(
+                "POST", f"{base}{provider.chat_path}", headers=_headers(provider, api_key), json=body
+            ) as resp,
+        ):
+            if resp.status_code >= 400:
+                resp.read()
+                _raise_for(resp)
+            for ev, data in _sse_lines(resp):
+                try:
+                    obj = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                t = obj.get("type") or ev
+                if t == "message_start":
+                    tin = int(((obj.get("message") or {}).get("usage") or {}).get("input_tokens") or 0)
+                elif t == "content_block_delta":
+                    d = obj.get("delta") or {}
+                    if d.get("type") == "text_delta" and d.get("text"):
+                        parts.append(d["text"])
+                        yield d["text"]
+                elif t == "message_delta":
+                    tout = int((obj.get("usage") or {}).get("output_tokens") or tout)
+                elif t == "error":
+                    raise ChatError(str(obj.get("error"))[:300])
+        yield ChatResult(content="".join(parts), tokens_in=tin, tokens_out=tout, latency_ms=0, raw_model=info.model)
+
+    def _google_stream(self, base, provider, info, api_key, system, messages, max_out, temperature):  # noqa: ANN001
+        import json
+
+        contents = [
+            {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
+            for m in messages
+        ]
+        body: dict = {"contents": contents, "generationConfig": {"maxOutputTokens": max_out}}
+        if system:
+            body["systemInstruction"] = {"parts": [{"text": system}]}
+        if temperature is not None and not info.no_temperature:
+            body["generationConfig"]["temperature"] = temperature
+        path = (
+            provider.chat_path.format(model=info.model).replace(":generateContent", ":streamGenerateContent")
+            + "?alt=sse"
+        )
+        parts: list[str] = []
+        tin = tout = 0
+        with (
+            httpx.Client(timeout=self.timeout) as client,
+            client.stream("POST", f"{base}{path}", headers=_headers(provider, api_key), json=body) as resp,
+        ):
+            if resp.status_code >= 400:
+                resp.read()
+                _raise_for(resp)
+            for _ev, data in _sse_lines(resp):
+                try:
+                    obj = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                um = obj.get("usageMetadata") or {}
+                if um:
+                    tin = int(um.get("promptTokenCount") or tin)
+                    tout = int(um.get("candidatesTokenCount") or tout)
+                for cand in obj.get("candidates") or []:
+                    for p in (cand.get("content") or {}).get("parts") or []:
+                        if p.get("text"):
+                            parts.append(p["text"])
+                            yield p["text"]
+        yield ChatResult(content="".join(parts), tokens_in=tin, tokens_out=tout, latency_ms=0, raw_model=info.model)
+
+
+for _name in ("chat_stream", "_openai_stream", "_anthropic_stream", "_google_stream"):
+    setattr(HttpTransport, _name, getattr(StreamingMixin, _name))
+
+
 def list_models(provider: ProviderInfo, api_key: str, base_url_override: str = "") -> list[str]:
     """Best-effort model discovery. Empty list on any failure."""
     base = (base_url_override or provider.base_url).rstrip("/")

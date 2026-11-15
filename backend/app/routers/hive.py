@@ -176,7 +176,7 @@ async def stream_session(session_id: int, after: int = 0, p: Principal = Depends
 
     async def gen():
         last_id = after
-        seen_state: dict[int, str] = {}
+        seen_state: dict[int, tuple[str, int]] = {}
         last_status = None
         idle = 0
         while True:
@@ -188,8 +188,9 @@ async def stream_session(session_id: int, after: int = 0, p: Principal = Depends
                     return
                 turns = db.query(HiveTurn).filter(HiveTurn.session_id == session_id).order_by(HiveTurn.id.asc()).all()
                 for t in turns:
-                    if t.id > last_id or seen_state.get(t.id) != t.state:
-                        seen_state[t.id] = t.state
+                    sig = (t.state, len(t.content or ""))
+                    if t.id > last_id or seen_state.get(t.id) != sig:
+                        seen_state[t.id] = sig
                         last_id = max(last_id, t.id)
                         yield _sse("turn", TurnOut.model_validate(t).model_dump())
                 if s.status != last_status:
@@ -203,7 +204,7 @@ async def stream_session(session_id: int, after: int = 0, p: Principal = Depends
             idle += 1
             if idle % 15 == 0:
                 yield ": keepalive\n\n"
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.5)
 
     return StreamingResponse(
         gen(),

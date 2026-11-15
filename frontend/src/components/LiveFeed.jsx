@@ -30,6 +30,8 @@ export default function LiveFeed({ turns, members, reveal, status }) {
     <div className="feed">
       {turns.map((t) => {
         const roundHdr = t.round_no !== lastRound; lastRound = t.round_no;
+        const streamed = t.state === "pending" && t.content;
+        if (streamed) seenRef.current.add(t.id); // saw it stream; no replay on completion
         const isNew = t.state === "done" && !seenRef.current.has(t.id);
         if (t.state === "done") seenRef.current.add(t.id);
         const c = colorFor(t.member_id);
@@ -43,7 +45,8 @@ export default function LiveFeed({ turns, members, reveal, status }) {
                 <span className="muted small">{PHASE[t.phase] || t.phase}</span>
                 {t.state === "done" && <span className="muted small right">{t.tokens_out} tok · {usd(t.cost_usd)} · {(t.latency_ms / 1000).toFixed(1)}s</span>}
               </div>
-              {t.state === "pending" && <div className="thinking"><span /><span /><span /> thinking…</div>}
+              {t.state === "pending" && !t.content && <div className="thinking"><span /><span /><span /> thinking…</div>}
+              {t.state === "pending" && t.content && <pre className="wrap bubble-text">{t.content}<span className="caret">▍</span></pre>}
               {t.state === "error" && <div className="error small">{t.error}</div>}
               {t.state === "done" && <Reveal text={t.content} animate={isNew && status === "running"} />}
             </div>

@@ -285,15 +285,8 @@ class Orchestrator:
         state.in_flight_usd += pf.est_cost_usd
         api_key = decrypt_secret(seat.token.encrypted_value)
         try:
-            result = self.transport.chat(
-                provider=provider,
-                info=info,
-                api_key=api_key,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-                max_output_tokens=max_out,
-                temperature=TEMPERATURE[phase],
-                base_url_override=seat.token.base_url_override,
+            result = self._call_transport(
+                turn, provider, info, api_key, system, user, max_out, TEMPERATURE[phase], seat
             )
         except ChatError as exc:
             state.in_flight_usd -= pf.est_cost_usd
@@ -334,6 +327,42 @@ class Orchestrator:
             latency_ms=result.latency_ms,
         )
         return result.content.strip() or None
+
+    def _call_transport(self, turn, provider, info, api_key, system, user, max_out, temperature, seat):  # noqa: ANN001
+        """Stream if the transport can, flushing partial text to the pending turn every ~0.4s so the live
+        feed types along. Falls back to a single-shot call for transports without chat_stream (tests)."""
+        kwargs = dict(
+            provider=provider,
+            info=info,
+            api_key=api_key,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            max_output_tokens=max_out,
+            temperature=temperature,
+            base_url_override=seat.token.base_url_override,
+        )
+        stream = getattr(self.transport, "chat_stream", None)
+        if stream is None:
+            return self.transport.chat(**kwargs)
+        import time as _t
+
+        buf: list[str] = []
+        last_flush = _t.monotonic()
+        final = None
+        for item in stream(**kwargs):
+            if isinstance(item, str):
+                buf.append(item)
+                if _t.monotonic() - last_flush > 0.4:
+                    turn.content = "".join(buf)
+                    self.db.commit()
+                    last_flush = _t.monotonic()
+            else:
+                final = item
+        if final is None:
+            raise ChatError("Stream ended without a result")
+        if not final.content and buf:
+            final.content = "".join(buf)
+        return final
 
     def _finish_turn(
         self,
