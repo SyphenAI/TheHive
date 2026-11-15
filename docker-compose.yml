@@ -1,0 +1,25 @@
+services:
+  thehive:
+    build: .
+    image: thehive:local
+    container_name: thehive
+    # Bound to loopback on purpose. Put a reverse proxy with TLS in front if you ever need LAN access.
+    ports:
+      - "127.0.0.1:50090:50090"
+    env_file: .env
+    environment:
+      DATA_DIR: /app/data
+      STORAGE_DIR: /app/storage
+      REGISTRY_PATH: /app/registry/providers.json
+    volumes:
+      - ./data:/app/data
+      - ./storage:/app/storage
+      - ./registry:/app/registry:ro
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

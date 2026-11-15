@@ -1,0 +1,41 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.pat
+*-pat.txt
+
+# runtime data
+data/*
+!data/.gitkeep
+storage/*
+!storage/.gitkeep
+!storage/sessions/
+storage/sessions/*
+!storage/sessions/.gitkeep
+!storage/tmp/
+storage/tmp/*
+!storage/tmp/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+backend/static/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# node
+node_modules/
+frontend/dist/
+*.log
+
+# ide / os
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

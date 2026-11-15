@@ -1,0 +1,74 @@
+{
+  "$schema_version": 1,
+  "_note": "Prices are USD per 1M tokens and are ESTIMATES used only for budget enforcement. Update them when vendors change pricing. Unknown models fall back to the provider's 'default_price'.",
+  "providers": {
+    "openai": {
+      "display": "OpenAI",
+      "style": "openai",
+      "base_url": "https://api.openai.com/v1",
+      "chat_path": "/chat/completions",
+      "models_path": "/models",
+      "auth": {"type": "bearer"},
+      "default_price": {"in": 2.5, "out": 10.0},
+      "models": {
+        "gpt-4o-mini": {"in": 0.15, "out": 0.6, "context": 128000},
+        "gpt-4.1-mini": {"in": 0.4, "out": 1.6, "context": 1000000},
+        "gpt-4o": {"in": 2.5, "out": 10.0, "context": 128000},
+        "gpt-5": {"in": 1.25, "out": 10.0, "context": 400000, "no_temperature": true, "max_completion_tokens": true},
+        "gpt-5-mini": {"in": 0.25, "out": 2.0, "context": 400000, "no_temperature": true, "max_completion_tokens": true}
+      }
+    },
+    "anthropic": {
+      "display": "Anthropic",
+      "style": "anthropic",
+      "base_url": "https://api.anthropic.com/v1",
+      "chat_path": "/messages",
+      "models_path": "/models",
+      "auth": {"type": "x-api-key", "extra_headers": {"anthropic-version": "2023-06-01"}},
+      "default_price": {"in": 3.0, "out": 15.0},
+      "models": {
+        "claude-haiku-4-5-20251001": {"in": 1.0, "out": 5.0, "context": 200000},
+        "claude-sonnet-4-5-20250929": {"in": 3.0, "out": 15.0, "context": 200000},
+        "claude-sonnet-5": {"in": 3.0, "out": 15.0, "context": 200000, "no_temperature": true},
+        "claude-opus-5-5": {"in": 15.0, "out": 75.0, "context": 200000, "no_temperature": true},
+        "claude-fable-5-1": {"in": 15.0, "out": 75.0, "context": 200000, "no_temperature": true}
+      }
+    },
+    "xai": {
+      "display": "xAI",
+      "style": "openai",
+      "base_url": "https://api.x.ai/v1",
+      "chat_path": "/chat/completions",
+      "models_path": "/models",
+      "auth": {"type": "bearer"},
+      "default_price": {"in": 3.0, "out": 15.0},
+      "models": {
+        "grok-4.6": {"in": 3.0, "out": 15.0, "context": 256000},
+        "grok-4.5": {"in": 3.0, "out": 15.0, "context": 256000}
+      }
+    },
+    "google": {
+      "display": "Google",
+      "style": "google",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "chat_path": "/models/{model}:generateContent",
+      "models_path": "/models",
+      "auth": {"type": "header", "header": "x-goog-api-key"},
+      "default_price": {"in": 1.25, "out": 10.0},
+      "models": {
+        "gemini-2.5-flash": {"in": 0.3, "out": 2.5, "context": 1000000},
+        "gemini-2.5-pro": {"in": 1.25, "out": 10.0, "context": 1000000}
+      }
+    },
+    "custom": {
+      "display": "Custom (OpenAI-compatible)",
+      "style": "openai",
+      "base_url": "",
+      "chat_path": "/chat/completions",
+      "models_path": "/models",
+      "auth": {"type": "bearer"},
+      "default_price": {"in": 0.0, "out": 0.0},
+      "models": {}
+    }
+  }
+}
