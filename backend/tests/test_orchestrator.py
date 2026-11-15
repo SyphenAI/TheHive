@@ -82,3 +82,27 @@ def test_turn_states_pending_to_done_or_error(db, session, seats, rng):
     assert turns and all(x.state in ("done", "error") for x in turns), "no turn may be left pending"
     assert all(x.finished_at is not None for x in turns)
     assert {x.state for x in turns if x.member_id == seats[0].member.id} == {"error"}
+
+
+def test_redteam_seat_attacks_in_critique_round(db, session, seats, rng):
+    from tests.conftest import make_seat
+
+    rt = make_seat(db, "xai", "grok-4.6", can_answer=False, can_critique=False, can_judge=False, can_redteam=True)
+    t = FakeTransport(drift=True)
+    Orchestrator(db, transport=t, rng=rng).run(session, [*seats, rt], judge=None)
+    rt_calls = [c for c in t.calls if "designated red team" in c["system"]]
+    assert rt_calls and all(c["model"] == "grok-4.6" for c in rt_calls)
+    # Red-team output reaches the revise prompt.
+    revise_calls = [c for c in t.calls if "REVISED" in c["system"]]
+    assert revise_calls and all('<critique from="Red team A">' in c["user"] for c in revise_calls)
+    turns = db.query(HiveTurn).filter(HiveTurn.session_id == session.id, HiveTurn.phase == "redteam").all()
+    assert turns and all(x.alias == "Red team A" for x in turns)
+
+
+def test_judge_prompt_demands_dissent_and_quotes(db, session, seats, rng):
+    t = FakeTransport()
+    Orchestrator(db, transport=t, rng=rng).run(session, seats, judge=None)
+    j = [c for c in t.calls if "judge for an expert panel" in c["system"]]
+    assert len(j) == 1
+    assert "disagreements" in j[0]["system"] and "quote the exact text" in j[0]["system"]
+    assert "Rubric for task type 'general'" in j[0]["system"]

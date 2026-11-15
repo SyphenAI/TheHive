@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usd } from "../api/client.js";
 
-const PHASE = { answer: "answers", critique: "critiques", revise: "revises", judge: "judges" };
+const PHASE = { answer: "answers", critique: "critiques", redteam: "attacks", revise: "revises", judge: "judges" };
 const PALETTE = ["#f5b301", "#5ac8fa", "#ff7ab6", "#3ddc84", "#c084fc", "#ff9f43", "#64d2ff", "#f87171"];
 
 /** Typewriter reveal for newly completed turns; instant for history. */

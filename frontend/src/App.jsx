@@ -34,6 +34,7 @@ function Shell({ children }) {
           {user?.role === "admin" && <NavLink to="/audit">Audit</NavLink>}
         </nav>
         <div className="spacer" />
+        <div className="small muted stateless-mini" title="Each session is built only from its own problem, context and turns. No cross-session memory.">○ stateless · no cross-session memory</div>
         {user?.role === "admin" && <UpdateBanner />}
         <BudgetBar />
         <div className="whoami">

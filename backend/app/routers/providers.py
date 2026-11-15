@@ -36,6 +36,7 @@ def _member_out(m: HiveMember) -> MemberOut:
         can_answer=m.can_answer,
         can_critique=m.can_critique,
         can_judge=m.can_judge,
+        can_redteam=bool(getattr(m, "can_redteam", False)),
         max_cost_per_call_usd=m.max_cost_per_call_usd,
     )
 
@@ -208,6 +209,7 @@ def create_member(
         can_answer=body.can_answer,
         can_critique=body.can_critique,
         can_judge=body.can_judge,
+        can_redteam=body.can_redteam,
         max_cost_per_call_usd=max(0.0, body.max_cost_per_call_usd),
     )
     db.add(m)

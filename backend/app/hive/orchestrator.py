@@ -38,8 +38,8 @@ from . import prompts
 logger = logging.getLogger("thehive.orchestrator")
 
 ALIAS_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-MAX_OUTPUT_TOKENS = {"answer": 2000, "critique": 1500, "revise": 2500, "judge": 1500}
-TEMPERATURE = {"answer": 0.7, "critique": 0.3, "revise": 0.5, "judge": 0.0}
+MAX_OUTPUT_TOKENS = {"answer": 2200, "critique": 1500, "redteam": 1500, "revise": 2600, "judge": 2500}
+TEMPERATURE = {"answer": 0.7, "critique": 0.3, "redteam": 0.6, "revise": 0.5, "judge": 0.0}
 
 
 class HiveHalted(Exception):
@@ -126,30 +126,53 @@ class Orchestrator:
             raise HiveHalted("Every seat failed in the answer phase.")
 
     def _phase_critique(self, state: RunState, round_no: int) -> dict[str, str]:
+        """Critique round: reviewers critique, red-team seats attack. Both feed the revise phase."""
         critics = [s for s in state.seats if s.member.can_critique]
-        if not critics:
+        redteam = [s for s in state.seats if getattr(s.member, "can_redteam", False)]
+        if not critics and not redteam:
             return {}
         answer_seats = [s for s in state.seats if s.member.id in state.answers]
         aliases = self._aliases(answer_seats)
         responses = {aliases[s.member.id]: state.answers[s.member.id] for s in answer_seats}
         ctx = prompts.context_block(state.session.context)
-        user = prompts.CRITIQUE_USER.format(
-            problem=state.session.problem, context_block=ctx, responses_block=prompts.responses_block(responses)
-        )
         critiques: dict[str, str] = {}
-        critic_aliases = self._aliases(critics, prefix="Reviewer")
-        for seat in critics:
-            text = self._call(
-                state,
-                seat,
-                round_no=round_no,
-                phase="critique",
-                alias=critic_aliases[seat.member.id],
-                system=prompts.CRITIQUE_SYSTEM,
-                user=user,
+
+        if critics:
+            user = prompts.CRITIQUE_USER.format(
+                problem=state.session.problem, context_block=ctx, responses_block=prompts.responses_block(responses)
             )
-            if text:
-                critiques[critic_aliases[seat.member.id]] = text
+            critic_aliases = self._aliases(critics, prefix="Reviewer")
+            for seat in critics:
+                text = self._call(
+                    state,
+                    seat,
+                    round_no=round_no,
+                    phase="critique",
+                    alias=critic_aliases[seat.member.id],
+                    system=prompts.CRITIQUE_SYSTEM,
+                    user=user,
+                )
+                if text:
+                    critiques[critic_aliases[seat.member.id]] = text
+
+        if redteam:
+            user = prompts.REDTEAM_USER.format(
+                problem=state.session.problem, context_block=ctx, responses_block=prompts.responses_block(responses)
+            )
+            rt_aliases = self._aliases(redteam, prefix="Red team")
+            for seat in redteam:
+                text = self._call(
+                    state,
+                    seat,
+                    round_no=round_no,
+                    phase="redteam",
+                    alias=rt_aliases[seat.member.id],
+                    system=prompts.REDTEAM_SYSTEM,
+                    user=user,
+                )
+                if text:
+                    critiques[rt_aliases[seat.member.id]] = text
+
         state.session.verdict = None
         # Stash alias map for revise so each seat knows its own alias.
         state._critique_aliases = aliases  # type: ignore[attr-defined]
@@ -197,7 +220,7 @@ class Orchestrator:
         aliases = self._aliases(answer_seats)
         responses = {aliases[s.member.id]: state.answers[s.member.id] for s in answer_seats}
         ctx = prompts.context_block(session.context)
-        system = prompts.JUDGE_SYSTEM.format(task_type=session.task_type, rubric=prompts.rubric_for(session.task_type))
+        system = prompts.judge_system(session.task_type)
         user = prompts.JUDGE_USER.format(
             problem=session.problem, context_block=ctx, responses_block=prompts.responses_block(responses)
         )

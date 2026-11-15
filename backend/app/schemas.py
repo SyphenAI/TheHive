@@ -103,6 +103,7 @@ class MemberCreate(BaseModel):
     can_answer: bool = True
     can_critique: bool = True
     can_judge: bool = True
+    can_redteam: bool = False
     max_cost_per_call_usd: float = 0.0
 
 
@@ -113,6 +114,7 @@ class MemberUpdate(BaseModel):
     can_answer: bool | None = None
     can_critique: bool | None = None
     can_judge: bool | None = None
+    can_redteam: bool | None = None
     max_cost_per_call_usd: float | None = None
 
 
@@ -126,6 +128,7 @@ class MemberOut(BaseModel):
     can_answer: bool
     can_critique: bool
     can_judge: bool
+    can_redteam: bool = False
     max_cost_per_call_usd: float
 
     model_config = {"from_attributes": True}

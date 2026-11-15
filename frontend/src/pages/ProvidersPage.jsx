@@ -10,7 +10,7 @@ export default function ProvidersPage() {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [tf, setTf] = useState({ provider: "openai", label: "default", value: "", base_url_override: "" });
-  const [mf, setMf] = useState({ token_id: "", model: "", nickname: "", can_answer: true, can_critique: true, can_judge: true, max_cost_per_call_usd: 0 });
+  const [mf, setMf] = useState({ token_id: "", model: "", nickname: "", can_answer: true, can_critique: true, can_judge: true, can_redteam: false, max_cost_per_call_usd: 0 });
   const [live, setLive] = useState({});
 
   const load = () => Promise.all([providers.registry(), providers.tokens()]).then(([r, t]) => { setReg(r); setTokens(t); }).catch((e) => setErr(e.message));
@@ -78,7 +78,7 @@ export default function ProvidersPage() {
 
         <section>
           <h2>Seats</h2>
-          <p className="muted small">A seat is one model on one key. Flags: <b>A</b>nswer, <b>C</b>ritique, <b>J</b>udge.</p>
+          <p className="muted small">A seat is one model on one key. Flags: <b>answer</b>, <b>critique</b>, <b>judge</b>, <b>redteam</b> (attacks the leading answers during the critique round; usually a seat that does not answer).</p>
           {tokens.flatMap((t) => t.members.map((m) => (
             <div key={m.id} className={`card ${m.enabled ? "" : "off"}`}>
               <div className="row between">
@@ -87,7 +87,7 @@ export default function ProvidersPage() {
               </div>
               {admin && (
                 <div className="row actions">
-                  {["can_answer", "can_critique", "can_judge"].map((f) => (
+                  {["can_answer", "can_critique", "can_judge", "can_redteam"].map((f) => (
                     <label key={f} className={`chip ${m[f] ? "on" : ""}`}><input type="checkbox" checked={m[f]} onChange={() => run(() => providers.updateMember(m.id, { [f]: !m[f] }))} />{f.replace("can_", "")}</label>
                   ))}
                   <label className="chip">cap $<input className="tiny" type="number" step="0.01" min="0" value={m.max_cost_per_call_usd} onChange={(e) => run(() => providers.updateMember(m.id, { max_cost_per_call_usd: Number(e.target.value) }))} /></label>
@@ -112,7 +112,7 @@ export default function ProvidersPage() {
                 <label>Per-call cap (USD, 0 = none)<input type="number" step="0.01" min="0" value={mf.max_cost_per_call_usd} onChange={(e) => setMf({ ...mf, max_cost_per_call_usd: e.target.value })} /></label>
               </div>
               <div className="row">
-                {["can_answer", "can_critique", "can_judge"].map((f) => (
+                {["can_answer", "can_critique", "can_judge", "can_redteam"].map((f) => (
                   <label key={f} className={`chip ${mf[f] ? "on" : ""}`}><input type="checkbox" checked={mf[f]} onChange={() => setMf({ ...mf, [f]: !mf[f] })} />{f.replace("can_", "")}</label>
                 ))}
               </div>

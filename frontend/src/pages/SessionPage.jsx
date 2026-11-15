@@ -3,8 +3,9 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { hive, providers, usd, when } from "../api/client.js";
 import { streamSession } from "../api/stream.js";
 import LiveFeed from "../components/LiveFeed.jsx";
+import Verdict from "../components/Verdict.jsx";
 
-const PHASE_LABEL = { answer: "Blind answer", critique: "Critique", revise: "Revision", judge: "Verdict" };
+const PHASE_LABEL = { answer: "Blind answer", critique: "Critique", redteam: "Red team", revise: "Revision", judge: "Verdict" };
 
 export default function SessionPage() {
   const { id } = useParams();
@@ -85,31 +86,7 @@ export default function SessionPage() {
         {s.context && <><h4>Context</h4><pre className="wrap small">{s.context}</pre></>}
       </details>
 
-      {s.verdict && !v._requested_member_ids && (
-        <div className="card verdict">
-          <h2>Verdict {v.judge && <span className="muted small">by {reveal ? v.judge : "Judge"}{v.judge_excluded_own_answer ? " (own answer excluded)" : ""}</span>}</h2>
-          {v.error ? <div className="warn">{v.error}</div> : (
-            <>
-              <div className="row"><strong>Winner:</strong> {v.winner} {reveal && v.alias_map?.[v.winner] && <span className="muted">({v.alias_map[v.winner]})</span>}</div>
-              {v.scores && (
-                <table className="scores"><thead><tr><th>Response</th>{Object.keys(Object.values(v.scores)[0] || {}).map((k) => <th key={k}>{k}</th>)}</tr></thead>
-                  <tbody>{Object.entries(v.scores).map(([alias, sc]) => (
-                    <tr key={alias} className={alias === v.winner ? "win" : ""}><td>{alias}{reveal && v.alias_map?.[alias] ? ` · ${v.alias_map[alias]}` : ""}</td>{Object.values(sc).map((x, i) => <td key={i}>{x}</td>)}</tr>
-                  ))}</tbody></table>
-              )}
-              {v.rationale && <><h4>Rationale</h4><p>{v.rationale}</p></>}
-              {v.synthesis && <><h4>Synthesis</h4><pre className="wrap">{v.synthesis}</pre></>}
-            </>
-          )}
-          {v.final_answers && (
-            <details><summary>Final answers</summary>
-              {Object.entries(v.final_answers).map(([alias, text]) => (
-                <div key={alias} className="turn"><div className="turn-head">{alias}{reveal && v.alias_map?.[alias] ? ` · ${v.alias_map[alias]}` : ""}</div><pre className="wrap">{text}</pre></div>
-              ))}
-            </details>
-          )}
-        </div>
-      )}
+      {s.verdict && !v._requested_member_ids && <Verdict v={v} reveal={reveal} />}
 
       {view === "feed" ? (
         <LiveFeed turns={s.turns} members={members} reveal={reveal} status={s.status} />

@@ -88,6 +88,7 @@ class HiveMember(Base):
     can_answer: Mapped[bool] = mapped_column(Boolean, default=True)
     can_critique: Mapped[bool] = mapped_column(Boolean, default=True)
     can_judge: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_redteam: Mapped[bool] = mapped_column(Boolean, default=False)
     # Per-call ceiling for this seat (USD). 0 = inherit session budget only.
     max_cost_per_call_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

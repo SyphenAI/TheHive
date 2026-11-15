@@ -36,6 +36,7 @@ export default function HivePage() {
     <div className="two-col">
       <section>
         <h1>New hive session</h1>
+        <div className="stateless"><span className="hex">⬢</span> <strong>Stateless.</strong> The seats see only this problem, this context, and each other's turns in this session. Nothing from earlier sessions, files, or chats is ever included.</div>
         {members.length < 2 && <div className="warn">Add at least two seats under <Link to="/providers">Providers &amp; seats</Link> before running a hive.</div>}
         <form className="card" onSubmit={submit}>
           <label>Title <span className="muted small">(optional)</span><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
@@ -56,7 +57,7 @@ export default function HivePage() {
               <label key={m.id} className={`chip ${picked.has(m.id) ? "on" : ""} ${m.enabled ? "" : "off"}`}>
                 <input type="checkbox" disabled={!m.enabled} checked={picked.has(m.id)} onChange={() => toggle(m.id)} />
                 {m.nickname || `${m.provider}/${m.model}`}
-                <span className="muted small"> {[m.can_answer && "A", m.can_critique && "C", m.can_judge && "J"].filter(Boolean).join("")}</span>
+                <span className="muted small"> {[m.can_answer && "A", m.can_critique && "C", m.can_judge && "J", m.can_redteam && "R"].filter(Boolean).join("")}</span>
               </label>
             ))}
           </fieldset>
