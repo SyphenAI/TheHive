@@ -14,13 +14,31 @@ Round 3+ repeat critique/revise until max rounds or the answers stop changing
 Final    judge     a seat that did NOT answer scores the finalists against a rubric and writes a synthesis
 ```
 
+Seat roles: **answer**, **critique**, **judge**, and **redteam** (a seat whose only job in the critique round is to attack the responses with concrete failure scenarios; usually a model that does not answer).
+
 Design choices that matter:
 
 - **Anonymized, shuffled aliases per phase.** Models never see "GPT said…"; they see "Response B". The same model isn't always Response A. This kills brand bias and self-favoritism.
 - **Judge never grades its own paper.** Auto mode prefers a seat that didn't answer and rotates by session. If you force a judge that also answered, its own response is excluded from scoring and the verdict says so.
 - **Convergence stop.** If every seat's revised answer is ≥92% similar to its previous one, remaining rounds are skipped. Rounds are where the bill lives.
 - **Budget guard is pre-flight.** Before each call the orchestrator estimates worst-case cost (input estimate + max output tokens × registry price) and checks it against the per-seat cap, the session budget, and global daily/monthly ceilings. If it would cross any line the session halts cleanly with the transcript so far intact.
+- **The verdict is a briefing, not a scoreboard.** The judge must quote the exact text behind every issue it raises, list where the responses *disagree* with its own call and confidence on each, and weigh each response's self-reported confidence (answers end with a `Confidence` section; confident-and-wrong costs more than hedged-and-wrong).
+- **Stateless.** Each session is built only from its own problem, context and turns. Nothing from earlier sessions, files or chats is ever included, and the UI says so where you type. If you want prior work in play, add it as context explicitly.
 - **Trust boundary.** Model output is untrusted input to the next model. Everything a model reads is wrapped in tags and the prompts say so. No model ever has tool access; the orchestrator is the only thing that touches the DB or network.
+
+## Context: files, URLs, papers
+
+The **Add context** panel on the session form appends tagged blocks to the context:
+
+- **url** — fetched server-side with an SSRF guard (public addresses only, ports 80/443, connection pinned to the checked IP, text content types, 1.5 MB cap), HTML stripped to text.
+- **file** — text-like files (code, Markdown, JSON, logs…), 1.5 MB cap. PDFs: paste the text for now.
+- **scholarly papers** — ported from [TheResearcher](https://github.com/SyphenAI/TheResearcher): Crossref, Semantic Scholar, OpenAlex and arXiv searched in parallel, merged, de-duplicated and ranked. Pick the ones you want; they land as a numbered `<evidence>` list and the seats are told to cite `[n]` and never invent citations.
+
+Seats with smaller context windows get a trimmed copy (middle cut, marked). Nothing ingested is stored server-side.
+
+Before you run, the form shows the **worst-case and likely cost** using the budget guard's own math, and warns if it exceeds the session budget or today's ceiling. Save a combination of seats, judge, rounds and budget as a **preset**. Finished sessions can be **exported as Markdown** (dissent first) or **re-run** with the form pre-filled.
+
+The live feed streams tokens as each model types (OpenAI, Anthropic and Gemini wire formats); the same SSE stream is available to integrations at `GET /api/v1/hive/sessions/{id}/stream`.
 
 ## Quick start
 
@@ -170,11 +188,9 @@ Sessions started by an API key are owned by the first admin account. Set `ENABLE
 ## Roadmap
 
 - [ ] Execution judge for `code` tasks: run candidates against tests in a network-isolated runner instead of asking a model which looks best
-- [ ] Context store: index prior sessions and local repos, retrieve per problem with per-seat context caps
-- [ ] Streaming transcript (SSE) instead of polling
+- [ ] PDF ingestion; Google Scholar via SerpAPI as an optional keyed source
 - [ ] Webhook on session completion (with host allowlist) for push-style integration
 - [ ] Per-user budgets; SSO / MFA for team deployments
-- [ ] Export session as Markdown
 - [ ] Shared core package with [TheResearcher](https://github.com/SyphenAI/TheResearcher) (auth, vault, transport, usage)
 
 ## License
