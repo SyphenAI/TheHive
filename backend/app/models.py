@@ -96,6 +96,21 @@ class HiveMember(Base):
     token: Mapped[ApiToken] = relationship(back_populates="members")
 
 
+class SeatPreset(Base):
+    """Named set of seats + defaults, shared by all users."""
+
+    __tablename__ = "seat_presets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    member_ids: Mapped[list] = mapped_column(JSON, default=list)
+    judge_member_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    task_type: Mapped[str] = mapped_column(String(32), default="general")
+    max_rounds: Mapped[int] = mapped_column(Integer, default=3)
+    budget_usd: Mapped[float] = mapped_column(Float, default=1.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class HiveSession(Base):
     """One problem run through the hive."""
 

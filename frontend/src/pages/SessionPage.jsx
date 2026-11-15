@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { hive, providers, usd, when } from "../api/client.js";
+import { downloadAuthed, hive, providers, usd, when } from "../api/client.js";
 import { streamSession } from "../api/stream.js";
 import LiveFeed from "../components/LiveFeed.jsx";
 import Verdict from "../components/Verdict.jsx";
@@ -68,6 +68,8 @@ export default function SessionPage() {
             <button className={view === "transcript" ? "on" : ""} onClick={() => setView("transcript")}>Transcript</button>
           </div>
           <label className="chip"><input type="checkbox" checked={reveal} onChange={(e) => setReveal(e.target.checked)} /> Reveal models</label>
+          <button onClick={() => downloadAuthed(hive.exportUrl(s.id, reveal), `thehive-session-${s.id}.md`).catch((e) => setErr(e.message))}>Export .md</button>
+          <button onClick={() => nav("/", { state: { rerun: { title: s.title, problem: s.problem, context: s.context, task_type: s.task_type, max_rounds: s.max_rounds, budget_usd: s.budget_usd, judge_member_id: s.judge_member_id || "", member_ids: [...new Set(s.turns.map((t) => t.member_id))] } } })}>Run again</button>
           {s.status !== "running" && <button className="danger" onClick={del}>Delete</button>}
         </div>
       </div>

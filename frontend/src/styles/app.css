@@ -119,3 +119,10 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; }
 .conf-high { color: var(--ok); } .conf-medium { color: var(--warn); } .conf-low { color: var(--bad); }
 .issue { margin: .25rem 0 .25rem .5rem; } .issue q { color: var(--accent-2); font-style: italic; }
 .per-resp { margin: .5rem 0; } .per-resp ul { margin: .2rem 0; padding-left: 1.2rem; }
+
+.estimate { border: 1px solid var(--line); border-radius: 8px; padding: .5rem .75rem; margin: .5rem 0; background: color-mix(in srgb, var(--panel-2) 80%, transparent); }
+.estimate.bad { border-color: var(--warn); color: var(--warn); }
+.estimate details summary { cursor: pointer; color: var(--muted); }
+.presets { margin-bottom: .6rem; }
+.chip.preset { gap: .2rem; } .chip.preset .x { color: var(--muted); text-decoration: none; padding: 0 .2rem; }
+.row > button { flex: 0; }

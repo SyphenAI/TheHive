@@ -11,14 +11,25 @@ import json
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
 from app.deps import Principal, require_scope
+from app.hive.estimate import estimate_session
+from app.hive.export import session_markdown
 from app.hive.orchestrator import Orchestrator, Seat
-from app.models import ApiToken, HiveMember, HiveSession, HiveTurn, User
-from app.schemas import BudgetStatus, SessionCreate, SessionOut, SessionSummary, TurnOut
+from app.models import ApiToken, HiveMember, HiveSession, HiveTurn, SeatPreset, User
+from app.schemas import (
+    BudgetStatus,
+    EstimateRequest,
+    PresetIn,
+    PresetOut,
+    SessionCreate,
+    SessionOut,
+    SessionSummary,
+    TurnOut,
+)
 from app.services import budget
 from app.services.audit import log_event
 
@@ -199,3 +210,64 @@ async def stream_session(session_id: int, after: int = 0, p: Principal = Depends
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/estimate")
+def estimate(
+    body: EstimateRequest, db: Session = Depends(get_db), _: Principal = Depends(require_scope("read"))
+) -> dict:
+    """Worst-case and likely cost for a run with these seats, using the guard's own math."""
+    seats = _load_seats(db, body.member_ids)
+    est = estimate_session(seats=seats, problem=body.problem, context=body.context, max_rounds=body.max_rounds)
+    est["global"] = budget.global_status(db)
+    return est
+
+
+@router.get("/sessions/{session_id}/export.md", response_class=PlainTextResponse)
+def export_markdown(
+    session_id: int, reveal: bool = False, db: Session = Depends(get_db), p: Principal = Depends(require_scope("read"))
+):
+    s = db.query(HiveSession).filter(HiveSession.id == session_id).first()
+    if not s or not _can_see(p, s):
+        raise HTTPException(status_code=404, detail="Session not found")
+    members = {m.id: m for m in db.query(HiveMember).all()}
+    md = session_markdown(s, members, reveal=reveal)
+    fname = f"thehive-session-{s.id}.md"
+    return PlainTextResponse(
+        md,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+# ---- presets ----
+@router.get("/presets", response_model=list[PresetOut])
+def list_presets(db: Session = Depends(get_db), _: Principal = Depends(require_scope("read"))):
+    return db.query(SeatPreset).order_by(SeatPreset.name).all()
+
+
+@router.post("/presets", response_model=PresetOut, status_code=201)
+def save_preset(body: PresetIn, db: Session = Depends(get_db), p: Principal = Depends(require_scope("run"))):
+    row = db.query(SeatPreset).filter(SeatPreset.name == body.name.strip()).first()
+    if row is None:
+        row = SeatPreset(name=body.name.strip())
+        db.add(row)
+    row.member_ids = body.member_ids
+    row.judge_member_id = body.judge_member_id
+    row.task_type = body.task_type
+    row.max_rounds = body.max_rounds
+    row.budget_usd = body.budget_usd
+    log_event(db, actor=p.name, action="preset_save", detail=row.name)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/presets/{preset_id}", status_code=204)
+def delete_preset(preset_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_scope("run"))):
+    row = db.query(SeatPreset).filter(SeatPreset.id == preset_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Preset not found")
+    db.delete(row)
+    log_event(db, actor=p.name, action="preset_delete", detail=row.name)
+    db.commit()

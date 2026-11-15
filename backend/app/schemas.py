@@ -197,6 +197,28 @@ class SessionSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PresetIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    member_ids: list[int]
+    judge_member_id: int | None = None
+    task_type: str = "general"
+    max_rounds: int = Field(default=3, ge=1, le=5)
+    budget_usd: float = Field(default=1.0, gt=0, le=1000)
+
+
+class PresetOut(PresetIn):
+    id: int
+
+    model_config = {"from_attributes": True}
+
+
+class EstimateRequest(BaseModel):
+    problem: str = ""
+    context: str = ""
+    max_rounds: int = Field(default=3, ge=1, le=5)
+    member_ids: list[int] | None = None
+
+
 # ---- misc ----
 class BudgetStatus(BaseModel):
     daily_spent_usd: float

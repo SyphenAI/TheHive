@@ -66,6 +66,11 @@ export const hive = {
   session: (id) => api(`/api/v1/hive/sessions/${id}`),
   create: (b) => api("/api/v1/hive/sessions", { method: "POST", body: b }),
   remove: (id) => api(`/api/v1/hive/sessions/${id}`, { method: "DELETE" }),
+  estimate: (b) => api("/api/v1/hive/estimate", { method: "POST", body: b }),
+  exportUrl: (id, reveal) => `/api/v1/hive/sessions/${id}/export.md?reveal=${reveal ? "true" : "false"}`,
+  presets: () => api("/api/v1/hive/presets"),
+  savePreset: (b) => api("/api/v1/hive/presets", { method: "POST", body: b }),
+  deletePreset: (id) => api(`/api/v1/hive/presets/${id}`, { method: "DELETE" }),
 };
 
 export const system = {
@@ -74,6 +79,15 @@ export const system = {
   version: () => api("/api/v1/system/version"),
   updateCheck: (force = false) => api(`/api/v1/system/update-check?force=${force}`),
 };
+
+export async function downloadAuthed(url, filename) {
+  const res = await fetch(url, { headers: { authorization: `Bearer ${getToken()}` } });
+  if (!res.ok) throw new ApiError(res.status, "download failed");
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
 
 export const usd = (n) => `$${Number(n || 0).toFixed(4)}`;
 export const when = (s) => (s ? new Date(s).toLocaleString() : "—");

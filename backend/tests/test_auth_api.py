@@ -131,3 +131,35 @@ def test_stream_requires_auth_and_ends_on_terminal(client):
     h = _admin(client)
     assert client.get("/api/v1/hive/sessions/1/stream").status_code == 401
     assert client.get("/api/v1/hive/sessions/999/stream", headers=h).status_code == 404
+
+
+def test_estimate_export_presets(client):
+    h = _admin(client)
+    # two seats via API
+    for prov, val, model in (
+        ("openai", "sk-test-1234567890", "gpt-4o-mini"),
+        ("anthropic", "sk-ant-test-123456", "claude-haiku-4-5-20251001"),
+    ):
+        tid = client.post("/api/v1/providers/tokens", headers=h, json={"provider": prov, "value": val}).json()["id"]
+        client.post("/api/v1/providers/members", headers=h, json={"token_id": tid, "model": model})
+    est = client.post("/api/v1/hive/estimate", headers=h, json={"problem": "x" * 400, "max_rounds": 3}).json()
+    assert est["worst_case_usd"] > 0 and est["calls"] == 2 + 2 * (2 + 2) + 1  # answers + 2 rounds*(crit+revise) + judge
+    assert est["phases"][0]["phase"] == "answer"
+    # preset round-trip
+    ids = [m["id"] for m in client.get("/api/v1/providers/members", headers=h).json()]
+    r = client.post("/api/v1/hive/presets", headers=h, json={"name": "cheap", "member_ids": ids, "budget_usd": 0.5})
+    assert r.status_code == 201 and r.json()["member_ids"] == ids
+    assert client.get("/api/v1/hive/presets", headers=h).json()[0]["name"] == "cheap"
+    # export of a (quickly failing) session
+    sid = client.post("/api/v1/hive/sessions", headers=h, json={"problem": "Is 7 prime?", "budget_usd": 0.2}).json()[
+        "id"
+    ]
+    import time
+
+    for _ in range(40):
+        if client.get(f"/api/v1/hive/sessions/{sid}", headers=h).json()["status"] in ("done", "halted", "error"):
+            break
+        time.sleep(0.25)
+    md = client.get(f"/api/v1/hive/sessions/{sid}/export.md", headers=h)
+    assert md.status_code == 200 and md.text.startswith("# Is 7 prime?") and "## Transcript" in md.text
+    assert "attachment" in md.headers["content-disposition"]
