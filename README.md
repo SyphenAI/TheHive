@@ -79,20 +79,81 @@ registry/providers.json  vendors, models, prices — edit this, not Python
 
 Prices in `registry/providers.json` are **estimates used for enforcement**, not billing truth. Update them when vendors change pricing; unknown model IDs fall back to the provider's `default_price`. The **Usage** page shows the ledger; your vendor invoices are the real number.
 
-## Security notes
+## Running with TLS (recommended at work)
 
-- Binds to `127.0.0.1` only. If you need LAN access, put a TLS reverse proxy with its own auth in front; don't change the bind.
-- Container runs read-only, non-root, all capabilities dropped. Only `data/`, `storage/` are writable (mounted volumes).
-- Swagger is off by default (`ENABLE_API_DOCS=true` to enable while developing).
-- Login is throttled (10 failures / 5 min / IP). Audit log records sign-ins, key changes, seat changes, and every session start.
-- **Kill switch** wipes every stored key and VACUUMs SQLite. It does **not** revoke keys at the vendor — do that in each console.
-- One `SECRET_KEY` signs sessions; a separate `TOKEN_FERNET_KEY` protects the key vault. Back them up together with `data/`; lose the Fernet key and the vault is gone.
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
+```
+
+Caddy terminates TLS at <https://localhost:50443> with its own local CA and the app's plain port is no longer published. Trust the CA once so the browser stops warning:
+
+```powershell
+# Windows (PowerShell, admin)
+docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt > thehive-ca.crt
+certutil -addstore -f Root thehive-ca.crt
+```
+```bash
+# macOS
+docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt > thehive-ca.crt
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain thehive-ca.crt
+```
+
+## Security model
+
+**Network.** Loopback bind only (`127.0.0.1`), HTTP or TLS via the overlay. Nothing listens on the LAN. Provider calls are the only outbound traffic; the container has no other reason to talk to the network.
+
+**Container.** Read-only root filesystem, non-root user, all Linux capabilities dropped, `no-new-privileges`, pid and memory limits, log rotation. Only `data/` and `storage/` are writable.
+
+**Secrets.** `SECRET_KEY` (JWT signing) and `TOKEN_FERNET_KEY` (provider-key vault) are separate, required, and validated at boot: placeholder or short values stop the app from starting. Provider keys are Fernet-encrypted at rest and only ever decrypted in memory for the duration of a call; the UI and API see a mask. Back up `.env` together with `data/`; without the Fernet key the vault is unrecoverable by design.
+
+**Authentication.** bcrypt (cost 12) passwords, 12-char minimum with a weak-list and username check. Forced password change on first login and after an admin reset. JWTs carry a `jti` and a per-user `token_version`: sign-out revokes the token server-side, and a password change, admin reset or deactivation bumps the version so every other session dies at once. Access tokens expire after 8 h. Account lockout after 8 failed attempts (15 min); the lockout is per account, not per IP, because behind Docker every client shares the bridge IP. Failed logins for unknown users burn a bcrypt check so usernames can't be enumerated by timing.
+
+**Authorization.** Two roles for people (`admin`, `member`), three scopes for integrations (`read`, `run`, `admin`). API keys can never manage users or other API keys, whatever their scope; that is JWT-admin only.
+
+**HTTP.** Strict CSP (`default-src 'self'`, no inline script, `frame-ancestors 'none'`), `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, `Cache-Control: no-store` on the API, HSTS when behind TLS. CORS is an explicit origin list, never `*`. Request bodies are capped at 2 MB (411 without Content-Length, 413 over). Swagger/OpenAPI are off unless `ENABLE_API_DOCS=true`.
+
+**Audit.** Sign-in/out, failed logins, lockouts, password events, user and key lifecycle, provider key and seat changes, kill switch, and every session start are logged with actor (user or `key:<name>`), capped at 2000 rows.
+
+**Kill switch** wipes every stored provider key and VACUUMs SQLite so freed pages don't retain ciphertext. It does **not** revoke keys at the vendor; do that in each console.
+
+**Models are untrusted.** Model output is data to the next model, never instructions, and no model has tool access. The orchestrator is the only component that touches the DB or the network.
+
+What this is *not*: a multi-tenant service. It assumes the people with accounts are trusted colleagues on one machine or one small team. There is no SSO, no MFA, and no per-user budget isolation yet.
+
+## Integration API
+
+Everything the UI does goes through `/api/v1`. For another system to drive TheHive, create an API key under **Users & API keys** and send it as `X-API-Key`.
+
+```bash
+# start a session (needs `run`)
+curl -s -X POST https://localhost:50443/api/v1/hive/sessions \
+  -H "X-API-Key: hive_sk_…" -H "content-type: application/json" \
+  -d '{"problem": "Review this threat model for gaps…", "context": "<paste>", "task_type": "security", "budget_usd": 2.0}'
+# → 202 {"id": 17, "status": "pending", …}
+
+# poll until status is done | halted | error (needs `read`)
+curl -s https://localhost:50443/api/v1/hive/sessions/17 -H "X-API-Key: hive_sk_…"
+# → {"status": "done", "verdict": {"winner": "Response B", "scores": {…}, "synthesis": "…", "alias_map": {…}, "final_answers": {…}}, "turns": [...]}
+```
+
+| Endpoint | Scope | Purpose |
+|---|---|---|
+| `GET /api/v1/hive/sessions`, `GET /api/v1/hive/sessions/{id}` | read | list / read transcript + verdict |
+| `POST /api/v1/hive/sessions`, `DELETE …/{id}` | run | start / remove a session |
+| `GET /api/v1/hive/budget`, `GET /api/v1/hive/usage` | read | spend vs ceilings, per-model ledger |
+| `GET /api/v1/providers/registry`, `…/tokens`, `…/members` | read | what's configured (keys masked) |
+| `POST/PATCH/DELETE /api/v1/providers/*` | admin | manage keys and seats |
+| `/api/v1/auth/users*`, `/api/v1/auth/api-keys*` | JWT admin only | people and integration credentials |
+
+Sessions started by an API key are owned by the first admin account. Set `ENABLE_API_DOCS=true` locally to browse the full OpenAPI schema at `/docs`. The `/api/v1` prefix is the compatibility promise; breaking changes will go to `/api/v2`.
 
 ## Roadmap
 
 - [ ] Execution judge for `code` tasks: run candidates against tests in a network-isolated runner instead of asking a model which looks best
 - [ ] Context store: index prior sessions and local repos, retrieve per problem with per-seat context caps
 - [ ] Streaming transcript (SSE) instead of polling
+- [ ] Webhook on session completion (with host allowlist) for push-style integration
+- [ ] Per-user budgets; SSO / MFA for team deployments
 - [ ] Export session as Markdown
 - [ ] Shared core package with [TheResearcher](https://github.com/SyphenAI/TheResearcher) (auth, vault, transport, usage)
 

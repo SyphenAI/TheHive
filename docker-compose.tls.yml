@@ -1,0 +1,30 @@
+# TLS overlay: docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
+# Caddy terminates TLS on https://localhost:50443 with its own local CA and proxies to the app
+# over the private compose network. The app's plain port is no longer published to the host.
+services:
+  thehive:
+    ports: !reset []
+    environment:
+      BEHIND_TLS: "true"
+      CORS_ORIGINS: "https://localhost:50443"
+  caddy:
+    image: caddy:2-alpine
+    container_name: thehive-tls
+    depends_on: [thehive]
+    ports:
+      - "127.0.0.1:50443:50443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    mem_limit: 128m
+volumes:
+  caddy_data:
+  caddy_config:

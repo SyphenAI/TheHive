@@ -6,12 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.deps import get_current_user, require_admin
+from app.deps import Principal, require_admin, require_scope
 from app.models import AuditLog, User
 from app.schemas import HealthOut
 from app.services.registry import load_registry
 
-router = APIRouter(prefix="/api", tags=["system"])
+router = APIRouter(prefix="/api/v1", tags=["system"])
 VERSION = "0.1.0"
 
 
@@ -22,7 +22,7 @@ def health_public() -> dict:
 
 
 @router.get("/health/detail", response_model=HealthOut)
-def health_detail(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def health_detail(db: Session = Depends(get_db), _: Principal = Depends(require_scope("read"))):
     cfg = get_settings()
     checks: dict = {"ok": True}
     try:

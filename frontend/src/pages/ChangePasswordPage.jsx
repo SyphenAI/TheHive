@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { auth } from "../api/client.js";
+import { auth, setToken } from "../api/client.js";
 import { useAuth } from "../api/auth.jsx";
 
 export default function ChangePasswordPage() {
@@ -15,7 +15,7 @@ export default function ChangePasswordPage() {
     e.preventDefault();
     if (nw !== again) return setErr("Passwords do not match");
     if (nw.length < 12) return setErr("Use at least 12 characters");
-    try { await auth.changePassword(cur, nw); await refresh(); nav("/", { replace: true }); }
+    try { const r = await auth.changePassword(cur, nw); setToken(r.access_token); await refresh(); nav("/", { replace: true }); }
     catch (ex) { setErr(ex.message); }
   };
 

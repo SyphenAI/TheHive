@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_user, require_admin
-from app.models import ApiToken, HiveMember, User
+from app.deps import Principal, require_scope
+from app.models import ApiToken, HiveMember
 from app.schemas import (
     KillSwitchResponse,
     MemberCreate,
@@ -22,7 +22,7 @@ from app.services.audit import log_event
 from app.services.llm import list_models, test_connection
 from app.services.registry import load_registry
 
-router = APIRouter(prefix="/api/providers", tags=["providers"])
+router = APIRouter(prefix="/api/v1/providers", tags=["providers"])
 
 
 def _member_out(m: HiveMember) -> MemberOut:
@@ -59,19 +59,19 @@ def _token_out(t: ApiToken) -> TokenOut:
 
 
 @router.get("/registry")
-def registry(_: User = Depends(get_current_user)) -> dict:
+def registry(_: Principal = Depends(require_scope("read"))) -> dict:
     return load_registry().as_public_dict()
 
 
 # ---- tokens ----
 @router.get("/tokens", response_model=list[TokenOut])
-def list_tokens(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def list_tokens(db: Session = Depends(get_db), _: Principal = Depends(require_scope("read"))):
     rows = db.query(ApiToken).order_by(ApiToken.provider, ApiToken.label).all()
     return [_token_out(t) for t in rows]
 
 
 @router.post("/tokens", response_model=TokenOut, status_code=201)
-def create_token(body: TokenCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def create_token(body: TokenCreate, db: Session = Depends(get_db), admin: Principal = Depends(require_scope("admin"))):
     reg = load_registry()
     provider = body.provider.strip().lower()
     if provider not in reg.providers:
@@ -88,35 +88,39 @@ def create_token(body: TokenCreate, db: Session = Depends(get_db), admin: User =
         base_url_override=body.base_url_override.strip(),
     )
     db.add(row)
-    log_event(db, actor=admin.username, action="token_create", detail=f"{provider}/{label}")
+    log_event(db, actor=admin.name, action="token_create", detail=f"{provider}/{label}")
     db.commit()
     db.refresh(row)
     return _token_out(row)
 
 
 @router.post("/tokens/{token_id}/rotate", response_model=TokenOut)
-def rotate_token(token_id: int, body: TokenCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def rotate_token(
+    token_id: int, body: TokenCreate, db: Session = Depends(get_db), admin: Principal = Depends(require_scope("admin"))
+):
     row = db.query(ApiToken).filter(ApiToken.id == token_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Token not found")
     row.encrypted_value = encrypt_secret(body.value.strip())
     if body.base_url_override:
         row.base_url_override = body.base_url_override.strip()
-    log_event(db, actor=admin.username, action="token_rotate", detail=f"{row.provider}/{row.label}")
+    log_event(db, actor=admin.name, action="token_rotate", detail=f"{row.provider}/{row.label}")
     db.commit()
     db.refresh(row)
     return _token_out(row)
 
 
 @router.post("/tokens/{token_id}/toggle", response_model=TokenOut)
-def toggle_token(token_id: int, active: bool, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def toggle_token(
+    token_id: int, active: bool, db: Session = Depends(get_db), admin: Principal = Depends(require_scope("admin"))
+):
     row = db.query(ApiToken).filter(ApiToken.id == token_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Token not found")
     row.is_active = active
     log_event(
         db,
-        actor=admin.username,
+        actor=admin.name,
         action="token_enable" if active else "token_disable",
         detail=f"{row.provider}/{row.label}",
     )
@@ -126,7 +130,7 @@ def toggle_token(token_id: int, active: bool, db: Session = Depends(get_db), adm
 
 
 @router.post("/tokens/{token_id}/test", response_model=TokenTestResult)
-def test_token(token_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def test_token(token_id: int, db: Session = Depends(get_db), admin: Principal = Depends(require_scope("admin"))):
     row = db.query(ApiToken).filter(ApiToken.id == token_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Token not found")
@@ -134,7 +138,7 @@ def test_token(token_id: int, db: Session = Depends(get_db), admin: User = Depen
     result = test_connection(provider, decrypt_secret(row.encrypted_value), row.base_url_override)
     log_event(
         db,
-        actor=admin.username,
+        actor=admin.name,
         action="token_test_ok" if result["ok"] else "token_test_fail",
         detail=f"{row.provider}/{row.label}",
     )
@@ -143,7 +147,9 @@ def test_token(token_id: int, db: Session = Depends(get_db), admin: User = Depen
 
 
 @router.get("/tokens/{token_id}/models")
-def discover_models(token_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)) -> dict:
+def discover_models(
+    token_id: int, db: Session = Depends(get_db), _: Principal = Depends(require_scope("read"))
+) -> dict:
     row = db.query(ApiToken).filter(ApiToken.id == token_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Token not found")
@@ -154,24 +160,24 @@ def discover_models(token_id: int, db: Session = Depends(get_db), _: User = Depe
 
 
 @router.delete("/tokens/{token_id}", status_code=204)
-def delete_token(token_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def delete_token(token_id: int, db: Session = Depends(get_db), admin: Principal = Depends(require_scope("admin"))):
     row = db.query(ApiToken).filter(ApiToken.id == token_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Token not found")
-    log_event(db, actor=admin.username, action="token_delete", detail=f"{row.provider}/{row.label}")
+    log_event(db, actor=admin.name, action="token_delete", detail=f"{row.provider}/{row.label}")
     db.delete(row)
     db.commit()
     return Response(status_code=204)
 
 
 @router.post("/kill-switch", response_model=KillSwitchResponse)
-def kill_switch(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def kill_switch(db: Session = Depends(get_db), admin: Principal = Depends(require_scope("admin"))):
     """Wipe every stored credential. This does NOT revoke keys at the provider; do that in each vendor console."""
     rows = db.query(ApiToken).all()
     n = len(rows)
     for r in rows:
         db.delete(r)
-    log_event(db, actor=admin.username, action="kill_switch", detail=f"wiped {n} token(s)")
+    log_event(db, actor=admin.name, action="kill_switch", detail=f"wiped {n} token(s)")
     db.commit()
     db.execute(__import__("sqlalchemy").text("VACUUM"))  # drop freed pages so plaintext-free ciphertext isn't lingering
     return KillSwitchResponse(
@@ -183,13 +189,15 @@ def kill_switch(db: Session = Depends(get_db), admin: User = Depends(require_adm
 
 # ---- members / seats ----
 @router.get("/members", response_model=list[MemberOut])
-def list_members(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def list_members(db: Session = Depends(get_db), _: Principal = Depends(require_scope("read"))):
     rows = db.query(HiveMember).join(ApiToken).order_by(ApiToken.provider, HiveMember.model).all()
     return [_member_out(m) for m in rows]
 
 
 @router.post("/members", response_model=MemberOut, status_code=201)
-def create_member(body: MemberCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def create_member(
+    body: MemberCreate, db: Session = Depends(get_db), admin: Principal = Depends(require_scope("admin"))
+):
     token = db.query(ApiToken).filter(ApiToken.id == body.token_id).first()
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
@@ -203,7 +211,7 @@ def create_member(body: MemberCreate, db: Session = Depends(get_db), admin: User
         max_cost_per_call_usd=max(0.0, body.max_cost_per_call_usd),
     )
     db.add(m)
-    log_event(db, actor=admin.username, action="member_create", detail=f"{token.provider}/{m.model}")
+    log_event(db, actor=admin.name, action="member_create", detail=f"{token.provider}/{m.model}")
     db.commit()
     db.refresh(m)
     return _member_out(m)
@@ -211,7 +219,10 @@ def create_member(body: MemberCreate, db: Session = Depends(get_db), admin: User
 
 @router.patch("/members/{member_id}", response_model=MemberOut)
 def update_member(
-    member_id: int, body: MemberUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)
+    member_id: int,
+    body: MemberUpdate,
+    db: Session = Depends(get_db),
+    admin: Principal = Depends(require_scope("admin")),
 ):
     m = db.query(HiveMember).filter(HiveMember.id == member_id).first()
     if not m:
@@ -219,18 +230,18 @@ def update_member(
     for k, v in body.model_dump(exclude_unset=True).items():
         if v is not None:
             setattr(m, k, v.strip() if isinstance(v, str) else v)
-    log_event(db, actor=admin.username, action="member_update", detail=f"{m.token.provider}/{m.model}")
+    log_event(db, actor=admin.name, action="member_update", detail=f"{m.token.provider}/{m.model}")
     db.commit()
     db.refresh(m)
     return _member_out(m)
 
 
 @router.delete("/members/{member_id}", status_code=204)
-def delete_member(member_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def delete_member(member_id: int, db: Session = Depends(get_db), admin: Principal = Depends(require_scope("admin"))):
     m = db.query(HiveMember).filter(HiveMember.id == member_id).first()
     if not m:
         raise HTTPException(status_code=404, detail="Member not found")
-    log_event(db, actor=admin.username, action="member_delete", detail=f"{m.token.provider}/{m.model}")
+    log_event(db, actor=admin.name, action="member_delete", detail=f"{m.token.provider}/{m.model}")
     db.delete(m)
     db.commit()
     return Response(status_code=204)

@@ -7,6 +7,7 @@ import SessionPage from "./pages/SessionPage.jsx";
 import ProvidersPage from "./pages/ProvidersPage.jsx";
 import UsagePage from "./pages/UsagePage.jsx";
 import AuditPage from "./pages/AuditPage.jsx";
+import AccessPage from "./pages/AccessPage.jsx";
 import BudgetBar from "./components/BudgetBar.jsx";
 
 function Protected({ children }) {
@@ -28,6 +29,7 @@ function Shell({ children }) {
           <NavLink to="/" end>Sessions</NavLink>
           <NavLink to="/providers">Providers &amp; seats</NavLink>
           <NavLink to="/usage">Usage</NavLink>
+          {user?.role === "admin" && <NavLink to="/access">Users &amp; API keys</NavLink>}
           {user?.role === "admin" && <NavLink to="/audit">Audit</NavLink>}
         </nav>
         <div className="spacer" />
@@ -57,6 +59,7 @@ export default function App() {
               <Route path="/providers" element={<ProvidersPage />} />
               <Route path="/usage" element={<UsagePage />} />
               <Route path="/audit" element={<AuditPage />} />
+              <Route path="/access" element={<AccessPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Shell>

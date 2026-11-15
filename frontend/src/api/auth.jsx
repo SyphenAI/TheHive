@@ -25,7 +25,7 @@ export function AuthProvider({ children }) {
     await refresh();
     return res;
   };
-  const logout = () => { setToken(null); setUser(null); };
+  const logout = async () => { await authApi.logout(); setToken(null); setUser(null); };
 
   return <Ctx.Provider value={{ user, loading, login, logout, refresh }}>{children}</Ctx.Provider>;
 }

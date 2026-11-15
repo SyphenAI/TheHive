@@ -1,0 +1,17 @@
+{
+  # Local CA. First run: `docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt`
+  # and trust it (Windows: certmgr → Trusted Root CAs; or `caddy trust` on the host).
+  local_certs
+  skip_install_trust
+}
+
+https://localhost:50443 {
+  tls internal
+  encode zstd gzip
+  request_body {
+    max_size 3MB
+  }
+  reverse_proxy thehive:50090 {
+    header_up X-Forwarded-Proto https
+  }
+}

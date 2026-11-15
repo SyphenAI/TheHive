@@ -22,6 +22,33 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=12, max_length=256)
 
 
+class PasswordResetRequest(BaseModel):
+    new_password: str = Field(min_length=12, max_length=256)
+
+
+class ApiKeyCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    scopes: list[str] = ["read"]
+    expires_days: int | None = Field(default=90, ge=1, le=3650)
+
+
+class ApiKeyOut(BaseModel):
+    id: int
+    name: str
+    prefix: str
+    scopes: str
+    expires_at: datetime | None
+    last_used_at: datetime | None
+    revoked: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ApiKeyCreated(ApiKeyOut):
+    key: str  # plaintext, returned exactly once
+
+
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$")
     display_name: str = ""

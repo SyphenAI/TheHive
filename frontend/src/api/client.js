@@ -30,41 +30,47 @@ export async function api(path, { method = "GET", body, raw = false } = {}) {
 }
 
 export const auth = {
-  login: (username, password) => api("/api/auth/login/json", { method: "POST", body: { username, password } }),
-  me: () => api("/api/auth/me"),
+  login: (username, password) => api("/api/v1/auth/login/json", { method: "POST", body: { username, password } }),
+  me: () => api("/api/v1/auth/me"),
+  logout: () => api("/api/v1/auth/logout", { method: "POST" }).catch(() => {}),
+  resetPassword: (id, new_password) => api(`/api/v1/auth/users/${id}/reset-password`, { method: "POST", body: { new_password } }),
+  deactivate: (id) => api(`/api/v1/auth/users/${id}/deactivate`, { method: "POST" }),
+  apiKeys: () => api("/api/v1/auth/api-keys"),
+  createApiKey: (b) => api("/api/v1/auth/api-keys", { method: "POST", body: b }),
+  revokeApiKey: (id) => api(`/api/v1/auth/api-keys/${id}/revoke`, { method: "POST" }),
   changePassword: (current_password, new_password) =>
-    api("/api/auth/change-password", { method: "POST", body: { current_password, new_password } }),
-  users: () => api("/api/auth/users"),
-  createUser: (b) => api("/api/auth/users", { method: "POST", body: b }),
+    api("/api/v1/auth/change-password", { method: "POST", body: { current_password, new_password } }),
+  users: () => api("/api/v1/auth/users"),
+  createUser: (b) => api("/api/v1/auth/users", { method: "POST", body: b }),
 };
 
 export const providers = {
-  registry: () => api("/api/providers/registry"),
-  tokens: () => api("/api/providers/tokens"),
-  createToken: (b) => api("/api/providers/tokens", { method: "POST", body: b }),
-  toggleToken: (id, active) => api(`/api/providers/tokens/${id}/toggle?active=${active}`, { method: "POST" }),
-  testToken: (id) => api(`/api/providers/tokens/${id}/test`, { method: "POST" }),
-  models: (id) => api(`/api/providers/tokens/${id}/models`),
-  deleteToken: (id) => api(`/api/providers/tokens/${id}`, { method: "DELETE" }),
-  killSwitch: () => api("/api/providers/kill-switch", { method: "POST" }),
-  members: () => api("/api/providers/members"),
-  createMember: (b) => api("/api/providers/members", { method: "POST", body: b }),
-  updateMember: (id, b) => api(`/api/providers/members/${id}`, { method: "PATCH", body: b }),
-  deleteMember: (id) => api(`/api/providers/members/${id}`, { method: "DELETE" }),
+  registry: () => api("/api/v1/providers/registry"),
+  tokens: () => api("/api/v1/providers/tokens"),
+  createToken: (b) => api("/api/v1/providers/tokens", { method: "POST", body: b }),
+  toggleToken: (id, active) => api(`/api/v1/providers/tokens/${id}/toggle?active=${active}`, { method: "POST" }),
+  testToken: (id) => api(`/api/v1/providers/tokens/${id}/test`, { method: "POST" }),
+  models: (id) => api(`/api/v1/providers/tokens/${id}/models`),
+  deleteToken: (id) => api(`/api/v1/providers/tokens/${id}`, { method: "DELETE" }),
+  killSwitch: () => api("/api/v1/providers/kill-switch", { method: "POST" }),
+  members: () => api("/api/v1/providers/members"),
+  createMember: (b) => api("/api/v1/providers/members", { method: "POST", body: b }),
+  updateMember: (id, b) => api(`/api/v1/providers/members/${id}`, { method: "PATCH", body: b }),
+  deleteMember: (id) => api(`/api/v1/providers/members/${id}`, { method: "DELETE" }),
 };
 
 export const hive = {
-  budget: () => api("/api/hive/budget"),
-  usage: (days = 30) => api(`/api/hive/usage?days=${days}`),
-  sessions: () => api("/api/hive/sessions"),
-  session: (id) => api(`/api/hive/sessions/${id}`),
-  create: (b) => api("/api/hive/sessions", { method: "POST", body: b }),
-  remove: (id) => api(`/api/hive/sessions/${id}`, { method: "DELETE" }),
+  budget: () => api("/api/v1/hive/budget"),
+  usage: (days = 30) => api(`/api/v1/hive/usage?days=${days}`),
+  sessions: () => api("/api/v1/hive/sessions"),
+  session: (id) => api(`/api/v1/hive/sessions/${id}`),
+  create: (b) => api("/api/v1/hive/sessions", { method: "POST", body: b }),
+  remove: (id) => api(`/api/v1/hive/sessions/${id}`, { method: "DELETE" }),
 };
 
 export const system = {
-  health: () => api("/api/health/detail"),
-  audit: (limit = 100) => api(`/api/audit?limit=${limit}`),
+  health: () => api("/api/v1/health/detail"),
+  audit: (limit = 100) => api(`/api/v1/audit?limit=${limit}`),
 };
 
 export const usd = (n) => `$${Number(n || 0).toFixed(4)}`;

@@ -1,9 +1,9 @@
+# Default: plain HTTP on loopback only. For TLS, also pass -f docker-compose.tls.yml (see README).
 services:
   thehive:
     build: .
     image: thehive:local
     container_name: thehive
-    # Bound to loopback on purpose. Put a reverse proxy with TLS in front if you ever need LAN access.
     ports:
       - "127.0.0.1:50090:50090"
     env_file: .env
@@ -18,8 +18,13 @@ services:
     restart: unless-stopped
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:size=64m
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    pids_limit: 256
+    mem_limit: 768m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

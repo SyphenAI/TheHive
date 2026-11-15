@@ -34,7 +34,13 @@ class Settings(BaseSettings):
     secret_key: str = ""
     token_fernet_key: str = ""
 
-    access_token_expire_minutes: int = 60 * 12
+    access_token_expire_minutes: int = 60 * 8
+    lockout_threshold: int = 8
+    lockout_minutes: int = 15
+    # Set true when a TLS proxy (compose tls profile) fronts the app: enables HSTS.
+    behind_tls: bool = False
+    # Max request body (bytes). Problem + context payloads; also caps what reaches the budget guard.
+    max_body_bytes: int = 2 * 1024 * 1024
     default_admin_username: str = "hive"
     default_admin_password: str = "change-on-first-login"
 

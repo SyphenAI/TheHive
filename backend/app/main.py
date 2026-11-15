@@ -75,13 +75,34 @@ app.add_middleware(
 )
 
 
+CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    "font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; "
+    "object-src 'none'"
+)
+
+
 @app.middleware("http")
-async def security_headers(request: Request, call_next):  # noqa: ANN001
+async def guardrails(request: Request, call_next):  # noqa: ANN001
+    # Body size cap before the handler reads it. Streaming bodies without Content-Length are rejected on /api.
+    if request.method in ("POST", "PATCH", "PUT") and request.url.path.startswith("/api/"):
+        cl = request.headers.get("content-length")
+        if cl is None or not cl.isdigit():
+            return JSONResponse({"detail": "Content-Length required"}, status_code=411)
+        if int(cl) > cfg.max_body_bytes:
+            return JSONResponse({"detail": f"Body exceeds {cfg.max_body_bytes} bytes"}, status_code=413)
+
     resp = await call_next(request)
-    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-    resp.headers.setdefault("X-Frame-Options", "DENY")
-    resp.headers.setdefault("Referrer-Policy", "no-referrer")
-    resp.headers.setdefault("Cache-Control", "no-store")
+    h = resp.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("Referrer-Policy", "no-referrer")
+    h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+    h.setdefault("Content-Security-Policy", CSP)
+    if request.url.path.startswith("/api/"):
+        h.setdefault("Cache-Control", "no-store")
+    if cfg.behind_tls:
+        h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return resp
 
 
