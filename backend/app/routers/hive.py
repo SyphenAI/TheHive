@@ -6,16 +6,19 @@ This router is the integration surface. API keys with `run` can start sessions a
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
 from app.deps import Principal, require_scope
 from app.hive.orchestrator import Orchestrator, Seat
-from app.models import ApiToken, HiveMember, HiveSession, User
-from app.schemas import BudgetStatus, SessionCreate, SessionOut, SessionSummary
+from app.models import ApiToken, HiveMember, HiveSession, HiveTurn, User
+from app.schemas import BudgetStatus, SessionCreate, SessionOut, SessionSummary, TurnOut
 from app.services import budget
 from app.services.audit import log_event
 
@@ -141,3 +144,58 @@ def delete_session(session_id: int, db: Session = Depends(get_db), p: Principal 
     db.delete(s)
     log_event(db, actor=p.name, action="hive_delete", detail=str(session_id))
     db.commit()
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+@router.get("/sessions/{session_id}/stream")
+async def stream_session(session_id: int, after: int = 0, p: Principal = Depends(require_scope("read"))):
+    """Server-sent events: `turn` for every new or updated turn, `status` on session status change,
+    `done` when the session reaches a terminal state. Resumable with ?after=<last turn id>.
+    """
+    db0 = SessionLocal()
+    try:
+        s0 = db0.query(HiveSession).filter(HiveSession.id == session_id).first()
+        if not s0 or not _can_see(p, s0):
+            raise HTTPException(status_code=404, detail="Session not found")
+    finally:
+        db0.close()
+
+    async def gen():
+        last_id = after
+        seen_state: dict[int, str] = {}
+        last_status = None
+        idle = 0
+        while True:
+            db = SessionLocal()
+            try:
+                s = db.query(HiveSession).filter(HiveSession.id == session_id).first()
+                if not s:
+                    yield _sse("done", {"status": "deleted"})
+                    return
+                turns = db.query(HiveTurn).filter(HiveTurn.session_id == session_id).order_by(HiveTurn.id.asc()).all()
+                for t in turns:
+                    if t.id > last_id or seen_state.get(t.id) != t.state:
+                        seen_state[t.id] = t.state
+                        last_id = max(last_id, t.id)
+                        yield _sse("turn", TurnOut.model_validate(t).model_dump())
+                if s.status != last_status:
+                    last_status = s.status
+                    yield _sse("status", {"status": s.status, "spent_usd": s.spent_usd, "halt_reason": s.halt_reason})
+                if s.status in ("done", "halted", "error"):
+                    yield _sse("done", {"status": s.status, "verdict": s.verdict})
+                    return
+            finally:
+                db.close()
+            idle += 1
+            if idle % 15 == 0:
+                yield ": keepalive\n\n"
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )

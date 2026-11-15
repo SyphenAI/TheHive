@@ -155,7 +155,9 @@ class TurnOut(BaseModel):
     cost_usd: float
     latency_ms: int
     error: str
+    state: str = "done"
     created_at: datetime
+    finished_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

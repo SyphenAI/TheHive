@@ -138,7 +138,9 @@ class HiveTurn(Base):
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(Text, default="")
+    state: Mapped[str] = mapped_column(String(12), default="done")  # pending | done | error
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     session: Mapped[HiveSession] = relationship(back_populates="turns")
 

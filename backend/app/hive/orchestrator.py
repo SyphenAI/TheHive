@@ -215,12 +215,28 @@ class Orchestrator:
     def _call(
         self, state: RunState, seat: Seat, *, round_no: int, phase: str, alias: str, system: str, user: str
     ) -> str | None:
-        """Budget-guarded provider call. Records a HiveTurn either way. Returns text or None on failure."""
+        """Budget-guarded provider call.
+
+        A pending HiveTurn is committed BEFORE the call so live viewers see "thinking…"; it is then
+        updated in place to done or error. Returns text or None on failure.
+        """
         session = state.session
         provider = self.registry.provider(seat.token.provider)
         info = provider.model_info(seat.member.model)
         max_out = MAX_OUTPUT_TOKENS[phase]
         tokens_in_est = rough_token_count(system) + rough_token_count(user)
+
+        turn = HiveTurn(
+            session_id=session.id,
+            round_no=round_no,
+            phase=phase,
+            member_id=seat.member.id,
+            alias=alias,
+            content="",
+            state="pending",
+        )
+        self.db.add(turn)
+        self.db.commit()
 
         try:
             pf = budget.preflight(
@@ -233,8 +249,7 @@ class Orchestrator:
                 in_flight_usd=state.in_flight_usd,
             )
         except budget.BudgetExceeded as exc:
-            self._record_turn(session, seat, round_no, phase, alias, "", error=str(exc))
-            self.db.commit()
+            self._finish_turn(turn, error=str(exc))
             raise HiveHalted(str(exc)) from exc
 
         state.in_flight_usd += pf.est_cost_usd
@@ -262,8 +277,7 @@ class Orchestrator:
                 tokens_out=0,
                 ok=False,
             )
-            self._record_turn(session, seat, round_no, phase, alias, "", error=str(exc))
-            self.db.commit()
+            self._finish_turn(turn, error=str(exc))
             logger.warning("seat %s failed in %s: %s", seat.label, phase, exc)
             return None
         finally:
@@ -281,51 +295,36 @@ class Orchestrator:
             ok=True,
         )
         seat.token.last_used_at = datetime.now(UTC)
-        self._record_turn(
-            session,
-            seat,
-            round_no,
-            phase,
-            alias,
-            result.content,
+        self._finish_turn(
+            turn,
+            content=result.content,
             tokens_in=result.tokens_in,
             tokens_out=result.tokens_out,
             cost=cost,
             latency_ms=result.latency_ms,
         )
-        self.db.commit()
         return result.content.strip() or None
 
-    def _record_turn(
+    def _finish_turn(
         self,
-        session: HiveSession,
-        seat: Seat,
-        round_no: int,
-        phase: str,
-        alias: str,
-        content: str,
+        turn: HiveTurn,
         *,
+        content: str = "",
         tokens_in: int = 0,
         tokens_out: int = 0,
         cost: float = 0.0,
         latency_ms: int = 0,
         error: str = "",
     ) -> None:
-        self.db.add(
-            HiveTurn(
-                session_id=session.id,
-                round_no=round_no,
-                phase=phase,
-                member_id=seat.member.id,
-                alias=alias,
-                content=content,
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
-                cost_usd=cost,
-                latency_ms=latency_ms,
-                error=error[:4000],
-            )
-        )
+        turn.content = content
+        turn.tokens_in = tokens_in
+        turn.tokens_out = tokens_out
+        turn.cost_usd = cost
+        turn.latency_ms = latency_ms
+        turn.error = error[:4000]
+        turn.state = "error" if error else "done"
+        turn.finished_at = datetime.now(UTC)
+        self.db.commit()
 
     def _aliases(self, seats: list[Seat], prefix: str = "Response") -> dict[int, str]:
         order = list(seats)

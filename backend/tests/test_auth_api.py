@@ -125,3 +125,9 @@ def test_api_key_admin_scope_manages_seats_but_not_users(client):
 def test_bad_or_malformed_key(client):
     assert client.get("/api/v1/hive/sessions", headers={"X-API-Key": "nope"}).status_code == 401
     assert client.get("/api/v1/hive/sessions", headers={"X-API-Key": "hive_sk_deadbeef_zzz"}).status_code == 401
+
+
+def test_stream_requires_auth_and_ends_on_terminal(client):
+    h = _admin(client)
+    assert client.get("/api/v1/hive/sessions/1/stream").status_code == 401
+    assert client.get("/api/v1/hive/sessions/999/stream", headers=h).status_code == 404

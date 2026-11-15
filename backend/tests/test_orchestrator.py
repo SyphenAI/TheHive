@@ -73,3 +73,12 @@ def test_explicit_judge_that_also_answered_is_excluded(db, session, seats, rng):
     assert session.judge_member_id == judge.member.id
     assert session.verdict["judge_excluded_own_answer"] is True
     assert "openai:gpt-4o-mini" not in session.verdict["alias_map"].values()
+
+
+def test_turn_states_pending_to_done_or_error(db, session, seats, rng):
+    t = FakeTransport(fail_models={"gpt-4o-mini"})
+    Orchestrator(db, transport=t, rng=rng).run(session, seats, judge=None)
+    turns = db.query(HiveTurn).filter(HiveTurn.session_id == session.id).all()
+    assert turns and all(x.state in ("done", "error") for x in turns), "no turn may be left pending"
+    assert all(x.finished_at is not None for x in turns)
+    assert {x.state for x in turns if x.member_id == seats[0].member.id} == {"error"}
