@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import SessionLocal, engine
 from app.models import User  # noqa: F401  (register models)
-from app.routers import auth, hive, providers, system
+from app.routers import auth, context, hive, providers, system
 from app.security import hash_password
 from app.services.audit import log_event
 from app.services.registry import load_registry
@@ -113,6 +113,7 @@ app.include_router(system.router)
 app.include_router(auth.router)
 app.include_router(providers.router)
 app.include_router(hive.router)
+app.include_router(context.router)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 if STATIC_DIR.exists():

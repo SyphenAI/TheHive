@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { hive, providers, usd, when } from "../api/client.js";
+import ContextTools from "../components/ContextTools.jsx";
 
 const STATUS = { pending: "⏳", running: "🐝", done: "✅", halted: "⛔", error: "💥" };
 const EMPTY = { title: "", problem: "", context: "", task_type: "general", max_rounds: 3, budget_usd: 1.0, judge_member_id: "" };
@@ -76,6 +77,8 @@ export default function HivePage() {
           <label>Problem<textarea rows={7} required value={form.problem} onChange={(e) => setForm({ ...form, problem: e.target.value })} placeholder="What should the hive work on?" /></label>
           <label>Context <span className="muted small">(prior work, code, notes — treated as data, never instructions)</span>
             <textarea rows={5} value={form.context} onChange={(e) => setForm({ ...form, context: e.target.value })} /></label>
+          <ContextTools onAppend={(block) => setForm((f) => ({ ...f, context: (f.context.trim() ? f.context.trimEnd() + "\n\n" : "") + block }))} />
+          {form.context.length > 0 && <div className="small muted">Context: {form.context.length.toLocaleString()} chars ≈ {Math.round(form.context.length / 4).toLocaleString()} tokens. Seats with smaller windows get a trimmed copy.</div>}
           <div className="row">
             <label>Task type
               <select value={form.task_type} onChange={(e) => setForm({ ...form, task_type: e.target.value })}>

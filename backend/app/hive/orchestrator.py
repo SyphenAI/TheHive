@@ -30,6 +30,7 @@ from app.config import get_settings
 from app.models import ApiToken, HiveMember, HiveSession, HiveTurn
 from app.security import decrypt_secret
 from app.services import budget
+from app.services.context import fit_context
 from app.services.llm import ChatError, HttpTransport, Transport
 from app.services.registry import load_registry, rough_token_count
 
@@ -247,6 +248,12 @@ class Orchestrator:
         provider = self.registry.provider(seat.token.provider)
         info = provider.model_info(seat.member.model)
         max_out = MAX_OUTPUT_TOKENS[phase]
+        # Per-seat window fit: leave room for the system prompt, the output, and slack.
+        user, truncated = fit_context(
+            user, model_context_tokens=info.context, reserve_tokens=rough_token_count(system) + max_out + 512
+        )
+        if truncated:
+            logger.info("seat %s: prompt truncated to fit %s-token window", seat.label, info.context)
         tokens_in_est = rough_token_count(system) + rough_token_count(user)
 
         turn = HiveTurn(
