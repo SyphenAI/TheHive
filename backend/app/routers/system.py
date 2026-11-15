@@ -10,9 +10,10 @@ from app.deps import Principal, require_admin, require_scope
 from app.models import AuditLog, User
 from app.schemas import HealthOut
 from app.services.registry import load_registry
+from app.services.updates import as_dict, check, current_sha, current_version
 
 router = APIRouter(prefix="/api/v1", tags=["system"])
-VERSION = "0.1.0"
+VERSION = current_version()
 
 
 @router.get("/health")
@@ -39,6 +40,17 @@ def health_detail(db: Session = Depends(get_db), _: Principal = Depends(require_
         checks["ok"] = False
     checks["data_dir_writable"] = cfg.data_dir.exists()
     return HealthOut(status="ok" if checks["ok"] else "degraded", version=VERSION, app_env=cfg.app_env, checks=checks)
+
+
+@router.get("/system/version")
+def version(_: Principal = Depends(require_scope("read"))) -> dict:
+    return {"version": VERSION, "sha": current_sha()}
+
+
+@router.get("/system/update-check")
+def update_check(force: bool = False, _: User = Depends(require_admin)) -> dict:
+    """Admin-only. Compares this build to GitHub; cached 1h. Applies nothing."""
+    return as_dict(check(force=force))
 
 
 @router.get("/audit")

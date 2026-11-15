@@ -15,6 +15,9 @@ COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install -r /app/backend/requirements.txt
 COPY backend/app /app/backend/app
 COPY registry /app/registry
+COPY VERSION /app/VERSION
+ARG GIT_SHA=
+ENV GIT_SHA=${GIT_SHA}
 COPY --from=ui /ui/dist /app/backend/static
 RUN mkdir -p /app/data /app/storage && useradd --create-home --uid 10001 hive && chown -R hive:hive /app
 USER hive

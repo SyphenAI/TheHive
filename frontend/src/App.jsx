@@ -9,6 +9,7 @@ import UsagePage from "./pages/UsagePage.jsx";
 import AuditPage from "./pages/AuditPage.jsx";
 import AccessPage from "./pages/AccessPage.jsx";
 import BudgetBar from "./components/BudgetBar.jsx";
+import UpdateBanner from "./components/UpdateBanner.jsx";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -33,6 +34,7 @@ function Shell({ children }) {
           {user?.role === "admin" && <NavLink to="/audit">Audit</NavLink>}
         </nav>
         <div className="spacer" />
+        {user?.role === "admin" && <UpdateBanner />}
         <BudgetBar />
         <div className="whoami">
           <div>{user?.display_name || user?.username}</div>

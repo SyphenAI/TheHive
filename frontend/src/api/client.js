@@ -71,6 +71,8 @@ export const hive = {
 export const system = {
   health: () => api("/api/v1/health/detail"),
   audit: (limit = 100) => api(`/api/v1/audit?limit=${limit}`),
+  version: () => api("/api/v1/system/version"),
+  updateCheck: (force = false) => api(`/api/v1/system/update-check?force=${force}`),
 };
 
 export const usd = (n) => `$${Number(n || 0).toFixed(4)}`;

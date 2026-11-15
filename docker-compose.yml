@@ -1,7 +1,10 @@
 # Default: plain HTTP on loopback only. For TLS, also pass -f docker-compose.tls.yml (see README).
 services:
   thehive:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-}
     image: thehive:local
     container_name: thehive
     ports:

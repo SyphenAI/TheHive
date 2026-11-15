@@ -1,0 +1,21 @@
+# OPT-IN unattended updates via Watchtower. Read before using.
+#
+# This makes the box pull and restart on every new ghcr.io image, with no human in the loop.
+# For a tool that holds provider API keys, that is a supply-chain trade-off: you are trusting
+# that nobody can push a bad image to the registry. Prefer the banner + scripts/update.* flow
+# unless you really need hands-off. Only meaningful together with docker-compose.ghcr.yml.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.autoupdate.yml up -d
+services:
+  thehive:
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: thehive-watchtower
+    command: --label-enable --cleanup --interval 21600   # every 6h; only containers labelled above
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # Docker Desktop on Windows maps this for you
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true

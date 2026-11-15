@@ -1,0 +1,8 @@
+# Prebuilt image overlay: docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+# Skips the local build; pulls the image published by the release workflow. Pin a tag for stability:
+#   THEHIVE_TAG=v0.2.0 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+services:
+  thehive:
+    image: ghcr.io/syphenai/thehive:${THEHIVE_TAG:-latest}
+    build: !reset null
+    pull_policy: always

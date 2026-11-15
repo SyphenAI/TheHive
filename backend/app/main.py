@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.database import Base, SessionLocal, engine
+from app.database import SessionLocal, engine
 from app.models import User  # noqa: F401  (register models)
 from app.routers import auth, hive, providers, system
 from app.security import hash_password
@@ -48,7 +48,10 @@ async def lifespan(_: FastAPI):
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
     (cfg.storage_dir / "sessions").mkdir(parents=True, exist_ok=True)
     (cfg.storage_dir / "tmp").mkdir(parents=True, exist_ok=True)
-    Base.metadata.create_all(bind=engine)
+    from app.services.migrate import ensure_schema
+
+    for a in ensure_schema(engine, system.VERSION):
+        logger.info("schema: %s", a)
     reg = load_registry()
     logger.info("Registry loaded: %s", ", ".join(sorted(reg.providers)))
     _seed_admin()

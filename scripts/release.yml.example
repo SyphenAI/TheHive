@@ -1,0 +1,33 @@
+# Move to .github/workflows/release.yml (needs a token with `workflow` scope to push).
+# On a tag like v0.2.0: run tests, build the image, push ghcr.io/syphenai/thehive:{v0.2.0,latest},
+# and create a GitHub release. The in-app update check reads that release.
+name: release
+on:
+  push:
+    tags: ["v*.*.*"]
+permissions:
+  contents: write
+  packages: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r backend/requirements-dev.txt && cd backend && ruff check . && pytest -q
+      - name: Check VERSION matches tag
+        run: test "v$(cat VERSION)" = "${GITHUB_REF_NAME}" || (echo "VERSION file != tag"; exit 1)
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: GIT_SHA=${{ github.sha }}
+          tags: |
+            ghcr.io/syphenai/thehive:${{ github.ref_name }}
+            ghcr.io/syphenai/thehive:latest
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

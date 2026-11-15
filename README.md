@@ -120,6 +120,26 @@ sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keyc
 
 What this is *not*: a multi-tenant service. It assumes the people with accounts are trusted colleagues on one machine or one small team. There is no SSO, no MFA, and no per-user budget isolation yet.
 
+## Updating
+
+TheHive **never updates itself**. It holds your provider keys, so code that pulls and runs new versions on a timer is a supply-chain hole. Instead:
+
+1. **The app tells you.** Admins see the running version in the sidebar; when GitHub has something newer it turns into an "Update available" banner with release notes. Channel is `release` by default (compares `VERSION` to the latest GitHub release); set `UPDATE_CHANNEL=pre-prod` to track the branch instead. Set `UPDATE_CHECK_ENABLED=false` to turn it off entirely.
+2. **You apply it with one command**, which backs up the database and `.env` first, fetches the code, rebuilds, and restarts. Works whether your folder is a git checkout or a plain copy:
+   ```powershell
+   .\scripts\update.ps1            # Windows   (add -Tls if you use the TLS overlay)
+   ```
+   ```bash
+   ./scripts/update.sh              # macOS / Linux   (add --tls)
+   ```
+3. **Schema changes are handled.** On boot the app adds any columns a newer version introduced (`schema: …` lines in the logs) and stamps the DB with the version. A downgrade is refused with a pointer to the pre-update backup in `data/backups/`.
+
+**Prebuilt images.** Once the release workflow (`scripts/release.yml.example`) is in place, every `vX.Y.Z` tag publishes `ghcr.io/syphenai/thehive`. Friends who don't want to build locally use the overlay: `docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d` (or `update.ps1 -NoBuild`). Pin with `THEHIVE_TAG=v0.2.0` for stability.
+
+**Fully unattended (opt-in).** `docker-compose.autoupdate.yml` adds Watchtower, which pulls and restarts on every new image with nobody watching. Read the header comment in that file before using it; it's there for people who've decided the convenience is worth it.
+
+**Cutting a release** (maintainer): bump `VERSION`, commit, `git tag v0.2.0 && git push --tags`. The workflow refuses to publish if `VERSION` and the tag disagree.
+
 ## Integration API
 
 Everything the UI does goes through `/api/v1`. For another system to drive TheHive, create an API key under **Users & API keys** and send it as `X-API-Key`.

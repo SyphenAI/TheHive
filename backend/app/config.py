@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     lockout_minutes: int = 15
     # Set true when a TLS proxy (compose tls profile) fronts the app: enables HSTS.
     behind_tls: bool = False
+    # Update awareness (never auto-applies). channel: release | pre-prod | main
+    update_check_enabled: bool = True
+    update_channel: str = "release"
     # Max request body (bytes). Problem + context payloads; also caps what reaches the budget guard.
     max_body_bytes: int = 2 * 1024 * 1024
     default_admin_username: str = "hive"
