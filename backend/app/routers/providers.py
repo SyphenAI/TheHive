@@ -22,6 +22,7 @@ from app.security import decrypt_secret, encrypt_secret, mask_secret
 from app.services.audit import log_event
 from app.services.llm import list_models, test_connection
 from app.services.registry import load_registry
+from app.services.scholar import RESEARCH_PROVIDERS
 
 router = APIRouter(prefix="/api/v1/providers", tags=["providers"])
 
@@ -62,7 +63,9 @@ def _token_out(t: ApiToken) -> TokenOut:
 
 @router.get("/registry")
 def registry(_: Principal = Depends(require_scope("read"))) -> dict:
-    return load_registry().as_public_dict()
+    d = load_registry().as_public_dict()
+    d["research_providers"] = RESEARCH_PROVIDERS
+    return d
 
 
 # ---- tokens ----
@@ -76,8 +79,10 @@ def list_tokens(db: Session = Depends(get_db), _: Principal = Depends(require_sc
 def create_token(body: TokenCreate, db: Session = Depends(get_db), admin: Principal = Depends(require_scope("admin"))):
     reg = load_registry()
     provider = body.provider.strip().lower()
-    if provider not in reg.providers:
-        raise HTTPException(status_code=400, detail=f"Unknown provider; known: {sorted(reg.providers)}")
+    if provider not in reg.providers and provider not in RESEARCH_PROVIDERS:
+        raise HTTPException(
+            status_code=400, detail=f"Unknown provider; known: {sorted(reg.providers) + sorted(RESEARCH_PROVIDERS)}"
+        )
     label = body.label.strip() or "default"
     if db.query(ApiToken).filter(ApiToken.provider == provider, ApiToken.label == label).first():
         raise HTTPException(status_code=400, detail="A token with that provider/label already exists")
@@ -136,8 +141,27 @@ def test_token(token_id: int, db: Session = Depends(get_db), admin: Principal = 
     row = db.query(ApiToken).filter(ApiToken.id == token_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Token not found")
-    provider = load_registry().provider(row.provider)
-    result = test_connection(provider, decrypt_secret(row.encrypted_value), row.base_url_override)
+    if row.provider in RESEARCH_PROVIDERS:
+        from app.services import scholar as _sch
+
+        key = decrypt_secret(row.encrypted_value)
+        items = _sch.search(
+            "large language model security",
+            limit=3,
+            sources=["google_scholar" if row.provider == "serpapi" else "semantic_scholar"],
+            keys={row.provider: key},
+        )
+        result = {
+            "ok": bool(items),
+            "latency_ms": None,
+            "message": f"{len(items)} result(s) from a probe search"
+            if items
+            else "Probe search returned nothing; check the key.",
+            "models_seen": [],
+        }
+    else:
+        provider = load_registry().provider(row.provider)
+        result = test_connection(provider, decrypt_secret(row.encrypted_value), row.base_url_override)
     log_event(
         db,
         actor=admin.name,
@@ -155,6 +179,8 @@ def discover_models(
     row = db.query(ApiToken).filter(ApiToken.id == token_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Token not found")
+    if row.provider in RESEARCH_PROVIDERS:
+        return {"registry": [], "live": []}
     reg = load_registry()
     provider = reg.provider(row.provider)
     live = list_models(provider, decrypt_secret(row.encrypted_value), row.base_url_override)
@@ -203,6 +229,8 @@ def create_member(
     token = db.query(ApiToken).filter(ApiToken.id == body.token_id).first()
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
+    if token.provider in RESEARCH_PROVIDERS:
+        raise HTTPException(status_code=400, detail="Research-source keys cannot be used as model seats")
     m = HiveMember(
         token_id=token.id,
         model=body.model.strip(),

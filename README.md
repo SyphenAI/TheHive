@@ -32,7 +32,7 @@ The **Add context** panel on the session form appends tagged blocks to the conte
 
 - **url** — fetched server-side with an SSRF guard (public addresses only, ports 80/443, connection pinned to the checked IP, text content types, 1.5 MB cap), HTML stripped to text.
 - **file** — text-like files (code, Markdown, JSON, logs…), 1.5 MB cap. PDFs: paste the text for now.
-- **scholarly papers** — ported from [TheResearcher](https://github.com/SyphenAI/TheResearcher): Crossref, Semantic Scholar, OpenAlex and arXiv searched in parallel, merged, de-duplicated and ranked. Pick the ones you want; they land as a numbered `<evidence>` list and the seats are told to cite `[n]` and never invent citations.
+- **scholarly papers** — ported from [TheResearcher](https://github.com/SyphenAI/TheResearcher): Crossref, Semantic Scholar, OpenAlex and arXiv searched in parallel, merged, de-duplicated and ranked. No keys needed. Optional upgrades under **Providers → Research sources** (same encrypted vault): a free Semantic Scholar API key for a higher rate limit, and a SerpAPI key which adds Google Scholar as a fifth source. Pick the ones you want; they land as a numbered `<evidence>` list and the seats are told to cite `[n]` and never invent citations.
 
 Seats with smaller context windows get a trimmed copy (middle cut, marked). Nothing ingested is stored server-side.
 
@@ -192,7 +192,7 @@ Sessions started by an API key are owned by the first admin account. Set `ENABLE
 ## Roadmap
 
 - [ ] Execution judge for `code` tasks: run candidates against tests in a network-isolated runner instead of asking a model which looks best
-- [ ] PDF ingestion; Google Scholar via SerpAPI as an optional keyed source
+- [ ] PDF ingestion
 - [ ] Webhook on session completion (with host allowlist) for push-style integration
 - [ ] Per-user budgets; SSO / MFA for team deployments
 - [ ] Shared core package with [TheResearcher](https://github.com/SyphenAI/TheResearcher) (auth, vault, transport, usage)

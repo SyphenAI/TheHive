@@ -16,8 +16,24 @@ from urllib.parse import quote
 
 import httpx
 
-USER_AGENT = "TheHive/0.2 (+https://github.com/SyphenAI/TheHive)"
+USER_AGENT = "TheHive/0.3 (+https://github.com/SyphenAI/TheHive)"
 TIMEOUT = 20.0
+
+# Optional keyed research providers. Stored in the same encrypted vault as model keys (api_tokens).
+RESEARCH_PROVIDERS = {
+    "semantic_scholar": {
+        "display": "Semantic Scholar (API key)",
+        "note": "Free key from semanticscholar.org raises your rate limit above the shared anonymous pool.",
+        "signup": "https://www.semanticscholar.org/product/api#api-key-form",
+        "unlocks": "faster, more reliable Semantic Scholar results",
+    },
+    "serpapi": {
+        "display": "SerpAPI (Google Scholar)",
+        "note": "Paid. Adds Google Scholar as a fifth source.",
+        "signup": "https://serpapi.com/",
+        "unlocks": "google_scholar source",
+    },
+}
 
 
 # ---------- scoring ----------
@@ -69,7 +85,9 @@ def _authors_str(authors: list[str]) -> str:
 
 
 # ---------- sources ----------
-def search_crossref(q: str, limit: int, year_from: int | None, year_to: int | None) -> list[dict]:
+def search_crossref(
+    q: str, limit: int, year_from: int | None, year_to: int | None, keys: dict | None = None
+) -> list[dict]:
     filters = []
     if year_from:
         filters.append(f"from-pub-date:{year_from}-01-01")
@@ -112,13 +130,17 @@ def search_crossref(q: str, limit: int, year_from: int | None, year_to: int | No
     return out
 
 
-def search_semantic_scholar(q: str, limit: int, year_from: int | None, year_to: int | None) -> list[dict]:
+def search_semantic_scholar(
+    q: str, limit: int, year_from: int | None, year_to: int | None, keys: dict | None = None
+) -> list[dict]:
     yq = ""
     if year_from or year_to:
         yq = f"&year={year_from or ''}-{year_to or ''}"
+    hdr = {"x-api-key": keys["semantic_scholar"]} if keys and keys.get("semantic_scholar") else None
     r = _get(
         f"https://api.semanticscholar.org/graph/v1/paper/search?query={quote(q)}&limit={limit}"
-        f"&fields=title,authors,year,abstract,url,citationCount,externalIds,venue{yq}"
+        f"&fields=title,authors,year,abstract,url,citationCount,externalIds,venue{yq}",
+        headers=hdr,
     )
     if not r:
         return []
@@ -145,7 +167,9 @@ def search_semantic_scholar(q: str, limit: int, year_from: int | None, year_to: 
     return out
 
 
-def search_openalex(q: str, limit: int, year_from: int | None, year_to: int | None) -> list[dict]:
+def search_openalex(
+    q: str, limit: int, year_from: int | None, year_to: int | None, keys: dict | None = None
+) -> list[dict]:
     filters = []
     if year_from:
         filters.append(f"from_publication_date:{year_from}-01-01")
@@ -187,7 +211,9 @@ def search_openalex(q: str, limit: int, year_from: int | None, year_to: int | No
     return out
 
 
-def search_arxiv(q: str, limit: int, year_from: int | None, year_to: int | None) -> list[dict]:
+def search_arxiv(
+    q: str, limit: int, year_from: int | None, year_to: int | None, keys: dict | None = None
+) -> list[dict]:
     r = _get(f"https://export.arxiv.org/api/query?search_query=all:{quote(q)}&max_results={limit}&sortBy=relevance")
     if not r:
         return []
@@ -227,11 +253,84 @@ def search_arxiv(q: str, limit: int, year_from: int | None, year_to: int | None)
     return out
 
 
+def _parse_gs_summary(summary: str) -> tuple[str, str, str]:
+    """'A Author, B Author - Venue, 2021 - site' -> (authors, year, venue)."""
+    parts = [x.strip() for x in summary.split(" - ")]
+    authors = parts[0] if parts else ""
+    year, venue = "", ""
+    if len(parts) > 1:
+        m = re.search(r"(19|20)\d{2}", parts[1])
+        year = m.group(0) if m else ""
+        venue = re.sub(r",?\s*(19|20)\d{2}.*$", "", parts[1]).strip()
+    return authors, year, venue
+
+
+def search_google_scholar(
+    q: str, limit: int, year_from: int | None, year_to: int | None, keys: dict | None = None
+) -> list[dict]:
+    key = (keys or {}).get("serpapi", "")
+    if not key:
+        return []
+    params = {"engine": "google_scholar", "q": q, "api_key": key, "num": max(1, min(limit, 20)), "hl": "en"}
+    if year_from:
+        params["as_ylo"] = year_from
+    if year_to:
+        params["as_yhi"] = year_to
+    try:
+        with httpx.Client(timeout=35.0, headers={"User-Agent": USER_AGENT}) as c:
+            r = c.get("https://serpapi.com/search.json", params=params)
+        if r.status_code >= 400:
+            return []
+        data = r.json()
+    except (httpx.HTTPError, ValueError):
+        return []
+    if not isinstance(data, dict) or data.get("error"):
+        return []
+    out = []
+    for it in data.get("organic_results") or []:
+        title = (it.get("title") or "").strip()
+        if not title:
+            continue
+        pub = it.get("publication_info") or {}
+        names = [a.get("name") for a in (pub.get("authors") or []) if isinstance(a, dict) and a.get("name")]
+        a_sum, year, venue = _parse_gs_summary(str(pub.get("summary") or ""))
+        authors = names or [a.strip() for a in a_sum.split(",") if a.strip()]
+        link = (it.get("link") or "").strip()
+        blob = " ".join(
+            [
+                link,
+                it.get("snippet") or "",
+                *[str(x.get("link") or "") for x in it.get("resources") or [] if isinstance(x, dict)],
+            ]
+        )
+        m = re.search(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", blob, flags=re.I)
+        doi = m.group(0).rstrip(").,;") if m else ""
+        try:
+            cited = int(((it.get("inline_links") or {}).get("cited_by") or {}).get("total") or 0)
+        except (TypeError, ValueError):
+            cited = 0
+        out.append(
+            {
+                "source": "google_scholar",
+                "title": title,
+                "authors": authors,
+                "year": year,
+                "venue": venue,
+                "abstract": re.sub(r"\s+", " ", str(it.get("snippet") or "")).strip()[:600],
+                "doi": doi,
+                "url": link or (f"https://doi.org/{doi}" if doi else ""),
+                "cited_by_count": cited,
+            }
+        )
+    return out
+
+
 SOURCES = {
     "crossref": search_crossref,
     "semantic_scholar": search_semantic_scholar,
     "openalex": search_openalex,
     "arxiv": search_arxiv,
+    "google_scholar": search_google_scholar,  # only yields results when a serpapi key is stored
 }
 
 
@@ -242,15 +341,18 @@ def search(
     sources: list[str] | None = None,
     year_from: int | None = None,
     year_to: int | None = None,
+    keys: dict | None = None,
 ) -> list[dict]:
     q = (query or "").strip()
     if len(q) < 3:
         return []
     srcs = [s for s in (sources or list(SOURCES)) if s in SOURCES]
+    if not (keys or {}).get("serpapi"):
+        srcs = [s for s in srcs if s != "google_scholar"]
     per = max(3, min(limit, 20))
     merged: dict[str, dict] = {}
     with ThreadPoolExecutor(max_workers=len(srcs) or 1) as ex:
-        futs = {s: ex.submit(SOURCES[s], q, per, year_from, year_to) for s in srcs}
+        futs = {s: ex.submit(SOURCES[s], q, per, year_from, year_to, keys or {}) for s in srcs}
         for s, f in futs.items():
             try:
                 items = f.result(timeout=TIMEOUT + 5)

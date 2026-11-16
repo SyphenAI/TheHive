@@ -8,6 +8,7 @@ export default function ContextTools({ onAppend }) {
   const [q, setQ] = useState("");
   const [yearFrom, setYearFrom] = useState("");
   const [results, setResults] = useState([]);
+  const [srcs, setSrcs] = useState(null);
   const [picked, setPicked] = useState(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -31,7 +32,7 @@ export default function ContextTools({ onAppend }) {
   };
   const search = () => run(async () => {
     const r = await api("/api/v1/context/scholar", { method: "POST", body: { query: q, limit: 10, year_from: yearFrom ? Number(yearFrom) : null } });
-    setResults(r.items); setPicked(new Set(r.items.slice(0, 5).map((i) => i.n)));
+    setResults(r.items); setSrcs(r.sources); setPicked(new Set(r.items.slice(0, 5).map((i) => i.n)));
     if (r.count === 0) setMsg("No results. Try broader terms.");
   });
   const addEvidence = () => run(async () => {
@@ -65,7 +66,7 @@ export default function ContextTools({ onAppend }) {
             <input className="tiny" placeholder="from year" value={yearFrom} onChange={(e) => setYearFrom(e.target.value)} />
             <button type="button" disabled={busy || q.length < 3} onClick={search}>Search</button>
           </div>
-          <div className="muted small">Crossref · Semantic Scholar · OpenAlex · arXiv. Seats are told to cite results as [n].</div>
+          <div className="muted small">{(srcs || ["crossref", "semantic_scholar", "openalex", "arxiv"]).map((x) => x.replace("_", " ")).join(" · ")}. Seats are told to cite results as [n].{!srcs?.includes("google_scholar") && " Add a SerpAPI key under Providers for Google Scholar."}</div>
           {results.length > 0 && (
             <div className="papers">
               {results.map((it) => (

@@ -40,9 +40,9 @@ export default function ProvidersPage() {
 
       <div className="two-col">
         <section>
-          <h2>Keys</h2>
+          <h2>Model keys</h2>
           <p className="muted small">Encrypted at rest with TOKEN_FERNET_KEY. The UI only ever sees a mask.</p>
-          {tokens.map((t) => (
+          {tokens.filter((t) => !reg?.research_providers?.[t.provider]).map((t) => (
             <div key={t.id} className={`card ${t.is_active ? "" : "off"}`}>
               <div className="row between">
                 <strong>{reg?.providers[t.provider]?.display || t.provider} <span className="muted">/ {t.label}</span></strong>
@@ -61,12 +61,33 @@ export default function ProvidersPage() {
               {live[t.id] && <div className="small muted">Live: {live[t.id].slice(0, 20).join(", ")}{live[t.id].length > 20 ? "…" : ""}</div>}
             </div>
           ))}
+          <h2>Research sources</h2>
+          <p className="muted small">The papers tab works with no keys (Crossref, Semantic Scholar, OpenAlex, arXiv). These are optional upgrades, stored in the same vault.</p>
+          {reg && Object.entries(reg.research_providers || {}).map(([k, rp]) => {
+            const t = tokens.find((x) => x.provider === k);
+            return (
+              <div key={k} className={`card ${t && !t.is_active ? "off" : ""}`}>
+                <div className="row between"><strong>{rp.display}</strong>{t ? <code>{t.masked_value}</code> : <span className="pill">not set</span>}</div>
+                <div className="small muted">{rp.note} Unlocks: {rp.unlocks}. <a href={rp.signup} target="_blank" rel="noreferrer">get a key ↗</a></div>
+                {admin && t && (
+                  <div className="row actions">
+                    <button onClick={() => test(t.id)}>Test</button>
+                    <button onClick={() => run(() => providers.toggleToken(t.id, !t.is_active))}>{t.is_active ? "Disable" : "Enable"}</button>
+                    <button className="danger" onClick={() => confirm("Delete this key?") && run(() => providers.deleteToken(t.id), "Deleted")}>Delete</button>
+                  </div>
+                )}
+                {admin && !t && <div className="row actions"><button onClick={() => setTf({ ...tf, provider: k, label: "default" })}>Add key below</button></div>}
+              </div>
+            );
+          })}
           {admin && reg && (
             <form className="card" onSubmit={addToken}>
               <h3>Add key</h3>
               <div className="row">
                 <label>Provider<select value={tf.provider} onChange={(e) => setTf({ ...tf, provider: e.target.value })}>
-                  {Object.entries(reg.providers).map(([k, p]) => <option key={k} value={k}>{p.display}</option>)}</select></label>
+                  <optgroup label="Models">{Object.entries(reg.providers).map(([k, p]) => <option key={k} value={k}>{p.display}</option>)}</optgroup>
+                  <optgroup label="Research sources">{Object.entries(reg.research_providers || {}).map(([k, p]) => <option key={k} value={k}>{p.display}</option>)}</optgroup>
+                </select></label>
                 <label>Label<input value={tf.label} onChange={(e) => setTf({ ...tf, label: e.target.value })} /></label>
               </div>
               <label>API key<input type="password" required value={tf.value} onChange={(e) => setTf({ ...tf, value: e.target.value })} autoComplete="off" /></label>
@@ -102,7 +123,7 @@ export default function ProvidersPage() {
               <h3>Add seat</h3>
               <label>Key<select required value={mf.token_id} onChange={(e) => setMf({ ...mf, token_id: e.target.value, model: "" })}>
                 <option value="">Pick a key…</option>
-                {tokens.map((t) => <option key={t.id} value={t.id}>{reg?.providers[t.provider]?.display || t.provider} / {t.label}</option>)}</select></label>
+                {tokens.filter((t) => !reg?.research_providers?.[t.provider]).map((t) => <option key={t.id} value={t.id}>{reg?.providers[t.provider]?.display || t.provider} / {t.label}</option>)}</select></label>
               <label>Model
                 <input required list="models" value={mf.model} onChange={(e) => setMf({ ...mf, model: e.target.value })} placeholder="type or pick" />
                 <datalist id="models">{modelsFor(mf.token_id).map((m) => <option key={m} value={m} />)}</datalist>
