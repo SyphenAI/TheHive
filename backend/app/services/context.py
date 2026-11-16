@@ -30,6 +30,14 @@ class UnsafeURL(ValueError):
     pass
 
 
+def _allowed_hosts() -> set[str]:
+    """OUTBOUND_ALLOWED_HOSTS: comma-separated hostnames (suffix match). Empty = any public host."""
+    import os
+
+    raw = os.environ.get("OUTBOUND_ALLOWED_HOSTS", "")
+    return {h.strip().lower().lstrip(".") for h in raw.split(",") if h.strip()}
+
+
 def _is_public(ip: str) -> bool:
     try:
         a = ipaddress.ip_address(ip)
@@ -56,6 +64,9 @@ def _check(url: str) -> tuple[str, str]:
         raise UnsafeURL(f"Port {port} is not allowed")
     if host in ("localhost",) or host.endswith((".local", ".internal", ".localhost")):
         raise UnsafeURL("Local hostnames are not allowed")
+    allow = _allowed_hosts()
+    if allow and not any(host == a or host.endswith("." + a) for a in allow):
+        raise UnsafeURL(f"{host} is not in OUTBOUND_ALLOWED_HOSTS")
     try:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except socket.gaierror as exc:

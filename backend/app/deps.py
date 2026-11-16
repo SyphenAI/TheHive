@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import ApiKey, RevokedToken, User
-from app.security import decode_access_token, hash_api_key, parse_api_key_prefix
+from app.security import constant_time_eq, decode_access_token, hash_api_key, parse_api_key_prefix
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
@@ -78,7 +78,7 @@ def _resolve_api_key(db: Session, raw: str) -> ApiKey:
     if not prefix:
         raise _unauthorized("Malformed API key")
     row = db.query(ApiKey).filter(ApiKey.prefix == prefix, ApiKey.revoked.is_(False)).first()
-    if not row or row.key_hash != hash_api_key(raw):
+    if not row or not constant_time_eq(row.key_hash, hash_api_key(raw)):
         raise _unauthorized("Invalid API key")
     if row.expires_at and row.expires_at.replace(tzinfo=UTC) < datetime.now(UTC):
         raise _unauthorized("API key expired")

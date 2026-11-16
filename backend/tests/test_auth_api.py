@@ -81,13 +81,6 @@ def test_logout_revokes_token(client):
     assert client.get("/api/v1/auth/me", headers=h).status_code == 401
 
 
-def test_account_lockout(client):
-    for _ in range(8):
-        assert _login(client, "wrong-wrong-wrong").status_code == 401
-    r = _login(client)  # correct password, but locked
-    assert r.status_code == 423
-
-
 def test_api_key_scopes(client):
     h = _admin(client)
     r = client.post("/api/v1/auth/api-keys", headers=h, json={"name": "ci", "scopes": ["read"], "expires_days": 30})
@@ -163,3 +156,33 @@ def test_estimate_export_presets(client):
     md = client.get(f"/api/v1/hive/sessions/{sid}/export.md", headers=h)
     assert md.status_code == 200 and md.text.startswith("# Is 7 prime?") and "## Transcript" in md.text
     assert "attachment" in md.headers["content-disposition"]
+
+
+def test_lockout_is_indistinguishable_from_bad_password(client):
+    for _ in range(8):
+        assert _login(client, "wrong-wrong-wrong").status_code == 401
+    r = _login(client)  # correct password, but locked
+    assert r.status_code == 401 and r.json()["detail"] == "Invalid credentials"
+
+
+def test_context_rate_limit(client):
+    from app.services import ratelimit
+
+    ratelimit.reset()
+    h = _admin(client)
+    codes = [
+        client.post(
+            "/api/v1/context/scholar", headers=h, json={"query": "zzz-no-such-topic-zzz", "limit": 1}
+        ).status_code
+        for _ in range(31)
+    ]
+    assert codes[-1] == 429 and all(c in (200, 429) for c in codes)
+    ratelimit.reset()
+
+
+def test_outbound_allowlist(monkeypatch):
+    from app.services.context import UnsafeURL, _check
+
+    monkeypatch.setenv("OUTBOUND_ALLOWED_HOSTS", "example.org")
+    with pytest.raises(UnsafeURL, match="OUTBOUND_ALLOWED_HOSTS"):
+        _check("https://example.com/")

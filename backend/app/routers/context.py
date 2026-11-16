@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.deps import Principal, require_scope
-from app.services import scholar
+from app.services import ratelimit, scholar
 from app.services.context import MAX_BYTES, UnsafeURL, fetch_url, source_block
 
 router = APIRouter(prefix="/api/v1/context", tags=["context"])
@@ -63,7 +63,8 @@ class ScholarFormatIn(BaseModel):
 
 
 @router.post("/url")
-def ingest_url(body: UrlIn, _: Principal = Depends(require_scope("run"))) -> dict:
+def ingest_url(body: UrlIn, p: Principal = Depends(require_scope("run"))) -> dict:
+    ratelimit.check("context.url", p.name, limit=20, window_s=60)
     try:
         r = fetch_url(body.url)
     except UnsafeURL as exc:
@@ -82,7 +83,8 @@ def ingest_url(body: UrlIn, _: Principal = Depends(require_scope("run"))) -> dic
 
 
 @router.post("/upload")
-async def ingest_upload(file: UploadFile = File(...), _: Principal = Depends(require_scope("run"))) -> dict:
+async def ingest_upload(file: UploadFile = File(...), p: Principal = Depends(require_scope("run"))) -> dict:
+    ratelimit.check("context.upload", p.name, limit=30, window_s=60)
     name = (file.filename or "upload").lower()
     if not name.endswith(TEXT_EXT):
         raise HTTPException(
@@ -97,7 +99,8 @@ async def ingest_upload(file: UploadFile = File(...), _: Principal = Depends(req
 
 
 @router.post("/scholar")
-def scholar_search(body: ScholarIn, _: Principal = Depends(require_scope("read"))) -> dict:
+def scholar_search(body: ScholarIn, p: Principal = Depends(require_scope("read"))) -> dict:
+    ratelimit.check("context.scholar", p.name, limit=30, window_s=60)
     items = scholar.search(
         body.query, limit=body.limit, sources=body.sources, year_from=body.year_from, year_to=body.year_to
     )

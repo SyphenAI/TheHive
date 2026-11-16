@@ -28,6 +28,7 @@ from app.schemas import (
     UserOut,
 )
 from app.security import create_access_token, decode_access_token, generate_api_key, hash_password, verify_password
+from app.services import ratelimit
 from app.services.audit import log_event
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -47,9 +48,14 @@ def _login(request: Request, username: str, password: str, db: Session) -> Token
     now = datetime.now(UTC)
     user = db.query(User).filter(User.username == username).first()
 
+    # Per-IP ceiling on attempts (behind Docker this is the bridge IP, so keep it generous).
+    ratelimit.check("login", ip, limit=60, window_s=60)
+
     if user and user.locked_until and user.locked_until.replace(tzinfo=UTC) > now:
-        remaining = int((user.locked_until.replace(tzinfo=UTC) - now).total_seconds() // 60) + 1
-        raise HTTPException(status_code=423, detail=f"Account locked; try again in {remaining} min")
+        # Same response as a bad password so the lock does not confirm the account exists.
+        log_event(db, actor=user.username, action="login_while_locked", detail=f"from {ip}")
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     if not user or not verify_password(password, user.password_hash):
         if user:

@@ -127,6 +127,8 @@ async def guardrails(request: Request, call_next):  # noqa: ANN001
     h.setdefault("Referrer-Policy", "no-referrer")
     h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
     h.setdefault("Content-Security-Policy", CSP)
+    h.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    h.setdefault("Cross-Origin-Resource-Policy", "same-origin")
     if request.url.path.startswith("/api/"):
         h.setdefault("Cache-Control", "no-store")
     if cfg.behind_tls:

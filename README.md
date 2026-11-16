@@ -124,9 +124,13 @@ sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keyc
 
 **Secrets.** `SECRET_KEY` (JWT signing) and `TOKEN_FERNET_KEY` (provider-key vault) are separate, required, and validated at boot: placeholder or short values stop the app from starting. Provider keys are Fernet-encrypted at rest and only ever decrypted in memory for the duration of a call; the UI and API see a mask. Back up `.env` together with `data/`; without the Fernet key the vault is unrecoverable by design.
 
-**Authentication.** bcrypt (cost 12) passwords, 12-char minimum with a weak-list and username check. Forced password change on first login and after an admin reset. JWTs carry a `jti` and a per-user `token_version`: sign-out revokes the token server-side, and a password change, admin reset or deactivation bumps the version so every other session dies at once. Access tokens expire after 8 h. Account lockout after 8 failed attempts (15 min); the lockout is per account, not per IP, because behind Docker every client shares the bridge IP. Failed logins for unknown users burn a bcrypt check so usernames can't be enumerated by timing.
+**Authentication.** bcrypt (cost 12) passwords, 12-char minimum with a weak-list and username check. Forced password change on first login and after an admin reset. JWTs carry a `jti` and a per-user `token_version`: sign-out revokes the token server-side, and a password change, admin reset or deactivation bumps the version so every other session dies at once. Access tokens expire after 8 h. Account lockout after 8 failed attempts (15 min); per account rather than per IP, because behind Docker every client shares the bridge IP. Failed logins for unknown users burn a bcrypt check so usernames can't be enumerated by timing.
 
 **Authorization.** Two roles for people (`admin`, `member`), three scopes for integrations (`read`, `run`, `admin`). API keys can never manage users or other API keys, whatever their scope; that is JWT-admin only.
+
+**Rate limits.** Login 60/min per IP on top of the per-account lockout; URL fetch 20/min, upload 30/min and scholar search 30/min per principal. A locked account gets the same `401 Invalid credentials` as a wrong password, so the lock does not confirm that a username exists (the audit log records the real reason).
+
+**Outbound.** Provider and scholar API calls are the only outbound traffic the app initiates on its own. The URL fetcher is SSRF-guarded (see *Context*), and `OUTBOUND_ALLOWED_HOSTS` can pin it to a host list.
 
 **HTTP.** Strict CSP (`default-src 'self'`, no inline script, `frame-ancestors 'none'`), `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, `Cache-Control: no-store` on the API, HSTS when behind TLS. CORS is an explicit origin list, never `*`. Request bodies are capped at 2 MB (411 without Content-Length, 413 over). Swagger/OpenAPI are off unless `ENABLE_API_DOCS=true`.
 
