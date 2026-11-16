@@ -1,3 +1,5 @@
+"""Append-only security event log, capped at MAX_AUDIT_ROWS (oldest pruned on write)."""
+
 from __future__ import annotations
 
 from sqlalchemy.orm import Session

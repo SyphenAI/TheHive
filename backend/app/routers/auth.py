@@ -1,3 +1,8 @@
+"""Browser auth (JWT), password lifecycle, user admin, and integration API keys.
+
+User and API-key management are JWT-admin only: an API key can never mint or revoke keys or touch users.
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

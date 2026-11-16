@@ -42,6 +42,30 @@ def _seed_admin() -> None:
         db.close()
 
 
+def _sweep_interrupted() -> None:
+    """Background runs die with the process. Anything still 'running' at boot was interrupted."""
+    from datetime import UTC, datetime
+
+    from app.models import HiveSession, HiveTurn
+
+    db = SessionLocal()
+    try:
+        stuck = db.query(HiveSession).filter(HiveSession.status.in_(["running", "pending"])).all()
+        for s in stuck:
+            s.status = "error"
+            s.halt_reason = "Interrupted by an app restart before it finished"
+            s.finished_at = datetime.now(UTC)
+            for t in db.query(HiveTurn).filter(HiveTurn.session_id == s.id, HiveTurn.state == "pending"):
+                t.state = "error"
+                t.error = "interrupted by restart"
+                t.finished_at = datetime.now(UTC)
+        if stuck:
+            log_event(db, actor="system", action="sweep_interrupted", detail=f"{len(stuck)} session(s)")
+            db.commit()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     cfg = get_settings()  # raises on bad secrets -> app refuses to start
@@ -55,6 +79,7 @@ async def lifespan(_: FastAPI):
     reg = load_registry()
     logger.info("Registry loaded: %s", ", ".join(sorted(reg.providers)))
     _seed_admin()
+    _sweep_interrupted()
     yield
 
 

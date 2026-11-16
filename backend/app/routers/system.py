@@ -1,3 +1,5 @@
+"""Liveness (public), authenticated health detail, version, update check (admin), audit feed (admin)."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends

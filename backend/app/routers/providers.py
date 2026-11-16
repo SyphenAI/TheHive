@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -180,7 +181,7 @@ def kill_switch(db: Session = Depends(get_db), admin: Principal = Depends(requir
         db.delete(r)
     log_event(db, actor=admin.name, action="kill_switch", detail=f"wiped {n} token(s)")
     db.commit()
-    db.execute(__import__("sqlalchemy").text("VACUUM"))  # drop freed pages so plaintext-free ciphertext isn't lingering
+    db.execute(text("VACUUM"))  # drop freed pages so ciphertext does not linger in the file
     return KillSwitchResponse(
         ok=True,
         removed_tokens=n,
