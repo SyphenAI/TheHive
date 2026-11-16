@@ -133,3 +133,13 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; }
 .papers { display: flex; flex-direction: column; gap: .4rem; margin-top: .5rem; }
 .paper { flex-direction: row; align-items: flex-start; gap: .5rem; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: .4rem .6rem; margin: 0; cursor: pointer; }
 .paper.on { border-color: var(--accent); } .paper .abstract { margin-top: .2rem; }
+
+.pill.lens { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.lens-picker select { max-width: 220px; } .lens-picker.compact select { padding: .2rem .4rem; font-size: .85em; }
+.lens-custom { display: flex; flex-direction: column; gap: .3rem; margin-top: .3rem; }
+.lens-row { padding: .2rem 0; } .lens-row .seat-name { min-width: 160px; }
+.lens-card summary { list-style: none; } .lens-card p { margin: .4rem 0; }
+fieldset .chip { margin: .3rem 0 0; }
+button.chip { padding: .25rem .7rem; font-size: .85em; font-weight: 500; background: var(--panel-2); color: var(--text); line-height: 1.2; }
+button.chip:hover { border-color: var(--accent); background: var(--panel-2); }
+.presets .link, .ctx-tools .link { white-space: nowrap; }

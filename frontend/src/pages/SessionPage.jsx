@@ -5,7 +5,7 @@ import { streamSession } from "../api/stream.js";
 import LiveFeed from "../components/LiveFeed.jsx";
 import Verdict from "../components/Verdict.jsx";
 
-const PHASE_LABEL = { answer: "Blind answer", critique: "Critique", redteam: "Red team", revise: "Revision", judge: "Verdict" };
+const PHASE_LABEL = { answer: "Blind answer", critique: "Critique", redteam: "Red team", advocate: "Devil's advocate", revise: "Revision", judge: "Verdict" };
 
 export default function SessionPage() {
   const { id } = useParams();
@@ -69,7 +69,7 @@ export default function SessionPage() {
           </div>
           <label className="chip"><input type="checkbox" checked={reveal} onChange={(e) => setReveal(e.target.checked)} /> Reveal models</label>
           <button onClick={() => downloadAuthed(hive.exportUrl(s.id, reveal), `thehive-session-${s.id}.md`).catch((e) => setErr(e.message))}>Export .md</button>
-          <button onClick={() => nav("/", { state: { rerun: { title: s.title, problem: s.problem, context: s.context, task_type: s.task_type, max_rounds: s.max_rounds, budget_usd: s.budget_usd, judge_member_id: s.judge_member_id || "", member_ids: [...new Set(s.turns.map((t) => t.member_id))] } } })}>Run again</button>
+          <button onClick={() => nav("/", { state: { rerun: { title: s.title, problem: s.problem, context: s.context, task_type: s.task_type, max_rounds: s.max_rounds, budget_usd: s.budget_usd, judge_member_id: s.judge_member_id || "", member_ids: [...new Set(s.turns.map((t) => t.member_id))], lenses: s.lenses || {}, devils_advocate: !!s.devils_advocate } } })}>Run again</button>
           {s.status !== "running" && <button className="danger" onClick={del}>Delete</button>}
         </div>
       </div>
@@ -103,6 +103,7 @@ export default function SessionPage() {
                   <div className="turn-head">
                     <span className="pill">{PHASE_LABEL[t.phase] || t.phase}</span>
                     <strong>{name(t)}</strong>
+                    {t.lens_name && <span className="pill lens">{t.lens_name}</span>}
                     <span className="muted small">{t.tokens_in}→{t.tokens_out} tok · {usd(t.cost_usd)} · {t.latency_ms}ms</span>
                   </div>
                   {t.state === "pending" ? <div className="muted small">thinking…</div> : t.error ? <div className="error small">{t.error}</div> : <pre className="wrap">{t.content}</pre>}

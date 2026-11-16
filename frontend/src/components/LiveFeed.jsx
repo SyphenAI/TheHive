@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usd } from "../api/client.js";
 
-const PHASE = { answer: "answers", critique: "critiques", redteam: "attacks", revise: "revises", judge: "judges" };
+const PHASE = { answer: "answers", critique: "critiques", redteam: "attacks", advocate: "defends", revise: "revises", judge: "judges" };
 const PALETTE = ["#f5b301", "#5ac8fa", "#ff7ab6", "#3ddc84", "#c084fc", "#ff9f43", "#64d2ff", "#f87171"];
 
 /** Typewriter reveal for newly completed turns; instant for history. */
@@ -42,6 +42,7 @@ export default function LiveFeed({ turns, members, reveal, status }) {
               <div className="bubble-head">
                 <span className="dot" style={{ background: c }} />
                 <strong>{nameFor(t)}</strong>
+                {t.lens_name && <span className="pill lens">{t.lens_name}</span>}
                 <span className="muted small">{PHASE[t.phase] || t.phase}</span>
                 {t.state === "done" && <span className="muted small right">{t.tokens_out} tok · {usd(t.cost_usd)} · {(t.latency_ms / 1000).toFixed(1)}s</span>}
               </div>

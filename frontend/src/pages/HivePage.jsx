@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { hive, providers, usd, when } from "../api/client.js";
 import ContextTools from "../components/ContextTools.jsx";
+import LensPicker from "../components/LensPicker.jsx";
 
 const STATUS = { pending: "⏳", running: "🐝", done: "✅", halted: "⛔", error: "💥" };
-const EMPTY = { title: "", problem: "", context: "", task_type: "general", max_rounds: 3, budget_usd: 1.0, judge_member_id: "" };
+const EMPTY = { title: "", problem: "", context: "", task_type: "general", max_rounds: 3, budget_usd: 1.0, judge_member_id: "", devils_advocate: false };
 
 export default function HivePage() {
   const nav = useNavigate();
@@ -12,6 +13,9 @@ export default function HivePage() {
   const [sessions, setSessions] = useState([]);
   const [members, setMembers] = useState([]);
   const [presets, setPresets] = useState([]);
+  const [lenses, setLenses] = useState([]);
+  const [panels, setPanels] = useState([]);
+  const [lensMap, setLensMap] = useState(loc.state?.rerun?.lenses || {}); // member_id -> {name,text} session override
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ ...EMPTY, ...(loc.state?.rerun || {}) });
@@ -19,8 +23,8 @@ export default function HivePage() {
   const [est, setEst] = useState(null);
   const estTimer = useRef(null);
 
-  const load = () => Promise.all([hive.sessions(), providers.members(), hive.presets()])
-    .then(([s, m, p]) => { setSessions(s); setMembers(m); setPresets(p); setPicked((cur) => cur.size ? cur : new Set(m.filter((x) => x.enabled).map((x) => x.id))); })
+  const load = () => Promise.all([hive.sessions(), providers.members(), hive.presets(), hive.lenses(), hive.panels()])
+    .then(([s, m, p, l, pn]) => { setSessions(s); setMembers(m); setPresets(p); setLenses(l); setPanels(pn); setPicked((cur) => cur.size ? cur : new Set(m.filter((x) => x.enabled).map((x) => x.id))); })
     .catch((e) => setErr(e.message));
   useEffect(() => { load(); const t = setInterval(() => hive.sessions().then(setSessions).catch(() => {}), 5000); return () => clearInterval(t); }, []); // eslint-disable-line
 
@@ -29,10 +33,10 @@ export default function HivePage() {
     clearTimeout(estTimer.current);
     if (picked.size < 2) { setEst(null); return; }
     estTimer.current = setTimeout(() => {
-      hive.estimate({ problem: form.problem, context: form.context, max_rounds: Number(form.max_rounds), member_ids: [...picked] }).then(setEst).catch(() => setEst(null));
+      hive.estimate({ problem: form.problem, context: form.context, max_rounds: Number(form.max_rounds), member_ids: [...picked], devils_advocate: form.devils_advocate }).then(setEst).catch(() => setEst(null));
     }, 400);
     return () => clearTimeout(estTimer.current);
-  }, [form.problem, form.context, form.max_rounds, picked]);
+  }, [form.problem, form.context, form.max_rounds, form.devils_advocate, picked]);
 
   const toggle = (id) => setPicked((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const answering = members.filter((m) => picked.has(m.id) && m.enabled && m.can_answer).length;
@@ -42,11 +46,24 @@ export default function HivePage() {
   const submit = async (e) => {
     e.preventDefault(); setBusy(true); setErr("");
     try {
-      const s = await hive.create({ ...form, max_rounds: Number(form.max_rounds), budget_usd: Number(form.budget_usd), member_ids: [...picked], judge_member_id: form.judge_member_id ? Number(form.judge_member_id) : null });
+      const lensesOut = Object.fromEntries(Object.entries(lensMap).filter(([id, v]) => picked.has(Number(id)) && v?.text?.trim()));
+      const s = await hive.create({ ...form, max_rounds: Number(form.max_rounds), budget_usd: Number(form.budget_usd), member_ids: [...picked], judge_member_id: form.judge_member_id ? Number(form.judge_member_id) : null, lenses: lensesOut });
       nav(`/sessions/${s.id}`);
     } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
   };
 
+  const applyPanel = (pn) => {
+    const answering = members.filter((m) => picked.has(m.id) && m.enabled && m.can_answer);
+    const next = {};
+    pn.lens_names.forEach((name, i) => {
+      const l = lenses.find((x) => x.name === name); const m = answering[i];
+      if (l && m) next[m.id] = { name: l.name, text: l.text };
+    });
+    setLensMap(next);
+    if (pn.task_type) setForm((f) => ({ ...f, task_type: pn.task_type }));
+    if (pn.lens_names.length > answering.length) setErr(`Panel "${pn.name}" has ${pn.lens_names.length} lenses but only ${answering.length} answering seat(s) are picked; extra lenses were skipped.`);
+    else setErr("");
+  };
   const applyPreset = (p) => {
     setPicked(new Set(p.member_ids));
     setForm((f) => ({ ...f, task_type: p.task_type, max_rounds: p.max_rounds, budget_usd: p.budget_usd, judge_member_id: p.judge_member_id || "" }));
@@ -96,6 +113,26 @@ export default function HivePage() {
                 <span className="muted small"> {[m.can_answer && "A", m.can_critique && "C", m.can_judge && "J", m.can_redteam && "R"].filter(Boolean).join("")}</span>
               </label>
             ))}
+          </fieldset>
+          <fieldset>
+            <legend>Lenses <span className="muted small">(viewpoint per answering seat; judge never gets one)</span></legend>
+            <div className="row">
+              <span className="muted small">Panel:</span>
+              {panels.map((pn) => <button key={pn.id} type="button" className="chip" title={pn.description} onClick={() => applyPanel(pn)}>{pn.name}</button>)}
+              <button type="button" className="link small" onClick={() => setLensMap({})}>clear</button>
+            </div>
+            {members.filter((m) => picked.has(m.id) && m.enabled && (m.can_answer || m.can_critique || m.can_redteam)).map((m) => {
+              const eff = lensMap[m.id] ?? (m.lens_text ? { name: m.lens_name, text: m.lens_text } : { name: "", text: "" });
+              const isDefault = !(m.id in lensMap);
+              return (
+                <div key={m.id} className="row lens-row">
+                  <span className="seat-name">{m.nickname || `${m.provider}/${m.model}`}</span>
+                  <LensPicker compact lenses={lenses} value={eff} onChange={(v) => setLensMap((lm) => ({ ...lm, [m.id]: v }))} />
+                  {isDefault && m.lens_text && <span className="muted small">seat default</span>}
+                </div>
+              );
+            })}
+            <label className="chip"><input type="checkbox" checked={form.devils_advocate} onChange={(e) => setForm({ ...form, devils_advocate: e.target.checked })} /> Devil's advocate <span className="muted small">— one critic per round argues <em>for</em> the responses</span></label>
           </fieldset>
           <label>Judge
             <select value={form.judge_member_id} onChange={(e) => setForm({ ...form, judge_member_id: e.target.value })}>

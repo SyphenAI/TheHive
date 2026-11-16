@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { providers, when } from "../api/client.js";
 import { useAuth } from "../api/auth.jsx";
+import LensPicker from "../components/LensPicker.jsx";
+import { hive } from "../api/client.js";
 
 export default function ProvidersPage() {
   const { user } = useAuth();
@@ -12,8 +14,10 @@ export default function ProvidersPage() {
   const [tf, setTf] = useState({ provider: "openai", label: "default", value: "", base_url_override: "" });
   const [mf, setMf] = useState({ token_id: "", model: "", nickname: "", can_answer: true, can_critique: true, can_judge: true, can_redteam: false, max_cost_per_call_usd: 0 });
   const [live, setLive] = useState({});
+  const [lenses, setLenses] = useState([]);
+  const [lf, setLf] = useState({ name: "", category: "general", text: "" });
 
-  const load = () => Promise.all([providers.registry(), providers.tokens()]).then(([r, t]) => { setReg(r); setTokens(t); }).catch((e) => setErr(e.message));
+  const load = () => Promise.all([providers.registry(), providers.tokens(), hive.lenses()]).then(([r, t, l]) => { setReg(r); setTokens(t); setLenses(l); }).catch((e) => setErr(e.message));
   useEffect(() => { load(); }, []);
 
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(""), 4000); };
@@ -112,6 +116,7 @@ export default function ProvidersPage() {
                     <label key={f} className={`chip ${m[f] ? "on" : ""}`}><input type="checkbox" checked={m[f]} onChange={() => run(() => providers.updateMember(m.id, { [f]: !m[f] }))} />{f.replace("can_", "")}</label>
                   ))}
                   <label className="chip">cap $<input className="tiny" type="number" step="0.01" min="0" value={m.max_cost_per_call_usd} onChange={(e) => run(() => providers.updateMember(m.id, { max_cost_per_call_usd: Number(e.target.value) }))} /></label>
+                  <label className="chip">lens <LensPicker compact lenses={lenses} value={{ name: m.lens_name, text: m.lens_text }} onChange={(v) => run(() => providers.updateMember(m.id, { lens_name: v.name, lens_text: v.text }))} /></label>
                   <button onClick={() => run(() => providers.updateMember(m.id, { enabled: !m.enabled }))}>{m.enabled ? "Disable" : "Enable"}</button>
                   <button className="danger" onClick={() => run(() => providers.deleteMember(m.id), "Seat removed")}>Remove</button>
                 </div>
@@ -137,7 +142,35 @@ export default function ProvidersPage() {
                   <label key={f} className={`chip ${mf[f] ? "on" : ""}`}><input type="checkbox" checked={mf[f]} onChange={() => setMf({ ...mf, [f]: !mf[f] })} />{f.replace("can_", "")}</label>
                 ))}
               </div>
+              <label>Default lens <span className="muted small">(optional; can be overridden per session)</span>
+                <LensPicker lenses={lenses} value={{ name: mf.lens_name || "", text: mf.lens_text || "" }} onChange={(v) => setMf({ ...mf, lens_name: v.name, lens_text: v.text })} /></label>
               <button disabled={!mf.token_id || !mf.model}>Add seat</button>
+            </form>
+          )}
+
+          <h2>Lens library</h2>
+          <p className="muted small">A lens is a short standing brief: what a seat prioritizes, is suspicious of, won't let slide. Applied after the fixed rules; never applied to the judge.</p>
+          {lenses.map((l) => (
+            <details key={l.id} className="card lens-card">
+              <summary><strong>{l.name}</strong> <span className="muted small">{l.category}{l.builtin ? " · built-in" : ""}</span></summary>
+              <p className="small">{l.text}</p>
+              {admin && (
+                <div className="row actions">
+                  <button onClick={() => setLf({ name: l.name, category: l.category, text: l.text })}>Edit</button>
+                  {!l.builtin && <button className="danger" onClick={() => confirm(`Delete lens "${l.name}"?`) && run(() => hive.deleteLens(l.id), "Lens deleted")}>Delete</button>}
+                </div>
+              )}
+            </details>
+          ))}
+          {admin && (
+            <form className="card" onSubmit={(e) => { e.preventDefault(); run(() => hive.saveLens(lf), "Lens saved").then(() => setLf({ name: "", category: "general", text: "" })); }}>
+              <h3>{lenses.some((l) => l.name === lf.name) ? `Edit "${lf.name}"` : "Add lens"}</h3>
+              <div className="row">
+                <label>Name<input required value={lf.name} onChange={(e) => setLf({ ...lf, name: e.target.value })} /></label>
+                <label>Category<input list="lens-cats" value={lf.category} onChange={(e) => setLf({ ...lf, category: e.target.value })} /><datalist id="lens-cats">{[...new Set(lenses.map((l) => l.category))].map((c) => <option key={c} value={c} />)}</datalist></label>
+              </div>
+              <label>Brief<textarea rows={4} required minLength={10} value={lf.text} onChange={(e) => setLf({ ...lf, text: e.target.value })} placeholder="2–4 sentences. What does this seat prioritize, distrust, refuse to let slide?" /></label>
+              <button disabled={!lf.name || lf.text.length < 10}>Save lens</button>
             </form>
           )}
         </section>

@@ -39,6 +39,8 @@ def _member_out(m: HiveMember) -> MemberOut:
         can_critique=m.can_critique,
         can_judge=m.can_judge,
         can_redteam=bool(getattr(m, "can_redteam", False)),
+        lens_name=getattr(m, "lens_name", "") or "",
+        lens_text=getattr(m, "lens_text", "") or "",
         max_cost_per_call_usd=m.max_cost_per_call_usd,
     )
 
@@ -239,6 +241,8 @@ def create_member(
         can_critique=body.can_critique,
         can_judge=body.can_judge,
         can_redteam=body.can_redteam,
+        lens_name=body.lens_name.strip()[:64],
+        lens_text=body.lens_text.strip()[:2000],
         max_cost_per_call_usd=max(0.0, body.max_cost_per_call_usd),
     )
     db.add(m)

@@ -106,3 +106,37 @@ def test_judge_prompt_demands_dissent_and_quotes(db, session, seats, rng):
     assert len(j) == 1
     assert "disagreements" in j[0]["system"] and "quote the exact text" in j[0]["system"]
     assert "Rubric for task type 'general'" in j[0]["system"]
+
+
+def test_lens_injected_after_rules_and_never_on_judge(db, session, seats, rng):
+    seats[0].member.lens_name = "Attacker"
+    seats[0].member.lens_text = "Assume every control has a bypass."
+    session.lenses = {str(seats[1].member.id): {"name": "Auditor", "text": "Every claim needs a control."}}
+    db.commit()
+    t = FakeTransport()
+    Orchestrator(db, transport=t, rng=rng).run(session, seats, judge=None)
+    openai_calls = [
+        c for c in t.calls if c["model"] == "gpt-4o-mini" and "judge for an expert panel" not in c["system"]
+    ]
+    assert openai_calls and all('Your lens on this panel ("Attacker")' in c["system"] for c in openai_calls)
+    # lens block comes AFTER the data rule so it cannot override it
+    assert all(c["system"].index("never as instructions") < c["system"].index("Your lens") for c in openai_calls)
+    anth_calls = [c for c in t.calls if "claude" in c["model"] and "judge for an expert panel" not in c["system"]]
+    assert all('("Auditor")' in c["system"] for c in anth_calls), "session override should apply"
+    judge = [c for c in t.calls if "judge for an expert panel" in c["system"]]
+    assert judge and "Your lens" not in judge[0]["system"]
+    turn = (
+        db.query(HiveTurn).filter(HiveTurn.session_id == session.id, HiveTurn.member_id == seats[0].member.id).first()
+    )
+    assert turn.lens_name == "Attacker"
+
+
+def test_devils_advocate_adds_one_defense_per_round(db, session, seats, rng):
+    session.devils_advocate = True
+    db.commit()
+    t = FakeTransport(drift=True)
+    Orchestrator(db, transport=t, rng=rng).run(session, seats, judge=None)
+    adv = db.query(HiveTurn).filter(HiveTurn.session_id == session.id, HiveTurn.phase == "advocate").all()
+    assert len(adv) == 2 and all(a.alias == "Devil's advocate" for a in adv)  # rounds 2 and 3
+    revise_calls = [c for c in t.calls if "REVISED" in c["system"]]
+    assert all('<critique from="Devil\'s advocate">' in c["user"] for c in revise_calls)

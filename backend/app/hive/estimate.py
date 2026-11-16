@@ -17,7 +17,9 @@ class PhaseEstimate:
     usd: float
 
 
-def estimate_session(*, seats: list[Seat], problem: str, context: str, max_rounds: int) -> dict:
+def estimate_session(
+    *, seats: list[Seat], problem: str, context: str, max_rounds: int, devils_advocate: bool = False
+) -> dict:
     reg = load_registry()
     base_in = rough_token_count(problem) + rough_token_count(context)
     answerers = [s for s in seats if s.member.can_answer]
@@ -41,6 +43,9 @@ def estimate_session(*, seats: list[Seat], problem: str, context: str, max_round
     for r in range(2, max_rounds + 1):
         tin_c = base_in + rough_token_count(CRITIQUE_SYSTEM) + answers_tokens
         phases.append(PhaseEstimate(f"critique r{r}", len(critics), sum(cost(s, tin_c, "critique") for s in critics)))
+        if devils_advocate and critics:
+            tin_d = base_in + rough_token_count(CRITIQUE_SYSTEM) + answers_tokens
+            phases.append(PhaseEstimate(f"advocate r{r}", 1, max(cost(s, tin_d, "advocate") for s in critics)))
         if redteam:
             tin_r = base_in + rough_token_count(REDTEAM_SYSTEM) + answers_tokens
             phases.append(PhaseEstimate(f"redteam r{r}", len(redteam), sum(cost(s, tin_r, "redteam") for s in redteam)))

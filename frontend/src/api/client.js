@@ -71,6 +71,12 @@ export const hive = {
   presets: () => api("/api/v1/hive/presets"),
   savePreset: (b) => api("/api/v1/hive/presets", { method: "POST", body: b }),
   deletePreset: (id) => api(`/api/v1/hive/presets/${id}`, { method: "DELETE" }),
+  lenses: () => api("/api/v1/hive/lenses"),
+  saveLens: (b) => api("/api/v1/hive/lenses", { method: "POST", body: b }),
+  deleteLens: (id) => api(`/api/v1/hive/lenses/${id}`, { method: "DELETE" }),
+  panels: () => api("/api/v1/hive/panels"),
+  savePanel: (b) => api("/api/v1/hive/panels", { method: "POST", body: b }),
+  deletePanel: (id) => api(`/api/v1/hive/panels/${id}`, { method: "DELETE" }),
 };
 
 export const system = {

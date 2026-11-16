@@ -104,6 +104,8 @@ class MemberCreate(BaseModel):
     can_critique: bool = True
     can_judge: bool = True
     can_redteam: bool = False
+    lens_name: str = ""
+    lens_text: str = ""
     max_cost_per_call_usd: float = 0.0
 
 
@@ -115,6 +117,8 @@ class MemberUpdate(BaseModel):
     can_critique: bool | None = None
     can_judge: bool | None = None
     can_redteam: bool | None = None
+    lens_name: str | None = None
+    lens_text: str | None = None
     max_cost_per_call_usd: float | None = None
 
 
@@ -129,6 +133,8 @@ class MemberOut(BaseModel):
     can_critique: bool
     can_judge: bool
     can_redteam: bool = False
+    lens_name: str = ""
+    lens_text: str = ""
     max_cost_per_call_usd: float
 
     model_config = {"from_attributes": True}
@@ -144,6 +150,8 @@ class SessionCreate(BaseModel):
     budget_usd: float = Field(default=1.0, gt=0, le=1000)
     member_ids: list[int] | None = None  # None = all enabled members
     judge_member_id: int | None = None  # None = rotate
+    lenses: dict[int, dict] | None = None  # {member_id: {name, text}} overrides for this session
+    devils_advocate: bool = False
 
 
 class TurnOut(BaseModel):
@@ -152,6 +160,7 @@ class TurnOut(BaseModel):
     phase: str
     member_id: int
     alias: str
+    lens_name: str = ""
     content: str
     tokens_in: int
     tokens_out: int
@@ -176,6 +185,8 @@ class SessionOut(BaseModel):
     budget_usd: float
     spent_usd: float
     judge_member_id: int | None
+    lenses: dict | None = None
+    devils_advocate: bool = False
     verdict: dict | None
     halt_reason: str
     created_at: datetime
@@ -217,6 +228,34 @@ class EstimateRequest(BaseModel):
     context: str = ""
     max_rounds: int = Field(default=3, ge=1, le=5)
     member_ids: list[int] | None = None
+    devils_advocate: bool = False
+
+
+class LensIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    category: str = "general"
+    text: str = Field(min_length=10, max_length=2000)
+
+
+class LensOut(LensIn):
+    id: int
+    builtin: bool
+
+    model_config = {"from_attributes": True}
+
+
+class PanelIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    task_type: str = "general"
+    description: str = ""
+    lens_names: list[str]
+
+
+class PanelOut(PanelIn):
+    id: int
+    builtin: bool
+
+    model_config = {"from_attributes": True}
 
 
 # ---- misc ----

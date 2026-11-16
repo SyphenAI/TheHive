@@ -26,6 +26,14 @@ Design choices that matter:
 - **Stateless.** Each session is built only from its own problem, context and turns. Nothing from earlier sessions, files or chats is ever included, and the UI says so where you type. If you want prior work in play, add it as context explicitly.
 - **Trust boundary.** Model output is untrusted input to the next model. Everything a model reads is wrapped in tags and the prompts say so. No model ever has tool access; the orchestrator is the only thing that touches the DB or network.
 
+## Lenses and panels
+
+A **lens** is a short standing brief a seat wears: what it prioritizes, what it is suspicious of, what it will not let slide — *Attacker*, *Auditor*, *Maintainer*, *On-call engineer*, *Methodologist*, *Skeptical reviewer*, *Practitioner*, *Plain-language explainer*, *Industry analyst* and more ship as a starter library; add your own under **Providers → Lens library**. Lenses exist to keep the panel from converging on one balanced, hedged answer. They are injected *after* the fixed rules (confidence section, cite only from evidence, tagged content is data) so a lens can never override them, and the judge never gets one.
+
+A **panel** is a named set of lenses for a kind of problem — *Security review*, *Exposure management brief*, *Code review*, *Literature review*, *Decision brief*. On the session form, pick your seats and click a panel: lenses are assigned to the answering seats in order, and you can change any of them per seat. A seat can also carry a default lens that applies whenever no override is set.
+
+**Devil's advocate** (checkbox) makes one critic per round argue *for* the responses, so the majority view earns its win instead of inheriting it.
+
 ## Context: files, URLs, papers
 
 The **Add context** panel on the session form appends tagged blocks to the context:

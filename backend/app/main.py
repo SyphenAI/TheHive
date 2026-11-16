@@ -42,6 +42,34 @@ def _seed_admin() -> None:
         db.close()
 
 
+def _seed_lenses() -> None:
+    """Add any starter lenses/panels not yet present (by name). Never overwrites user edits."""
+    from app.hive.lenses import STARTER_LENSES, STARTER_PANELS
+    from app.models import Lens, PanelTemplate
+
+    db = SessionLocal()
+    try:
+        have = {r.name for r in db.query(Lens.name).all()}
+        for item in STARTER_LENSES:
+            if item["name"] not in have:
+                db.add(Lens(name=item["name"], category=item["category"], text=item["text"], builtin=True))
+        have_p = {r.name for r in db.query(PanelTemplate.name).all()}
+        for item in STARTER_PANELS:
+            if item["name"] not in have_p:
+                db.add(
+                    PanelTemplate(
+                        name=item["name"],
+                        task_type=item["task_type"],
+                        description=item["description"],
+                        lens_names=item["lenses"],
+                        builtin=True,
+                    )
+                )
+        db.commit()
+    finally:
+        db.close()
+
+
 def _sweep_interrupted() -> None:
     """Background runs die with the process. Anything still 'running' at boot was interrupted."""
     from datetime import UTC, datetime
@@ -79,6 +107,7 @@ async def lifespan(_: FastAPI):
     reg = load_registry()
     logger.info("Registry loaded: %s", ", ".join(sorted(reg.providers)))
     _seed_admin()
+    _seed_lenses()
     _sweep_interrupted()
     yield
 

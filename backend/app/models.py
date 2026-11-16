@@ -89,11 +89,40 @@ class HiveMember(Base):
     can_critique: Mapped[bool] = mapped_column(Boolean, default=True)
     can_judge: Mapped[bool] = mapped_column(Boolean, default=True)
     can_redteam: Mapped[bool] = mapped_column(Boolean, default=False)
+    lens_name: Mapped[str] = mapped_column(String(64), default="")
+    lens_text: Mapped[str] = mapped_column(Text, default="")
     # Per-call ceiling for this seat (USD). 0 = inherit session budget only.
     max_cost_per_call_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     token: Mapped[ApiToken] = relationship(back_populates="members")
+
+
+class Lens(Base):
+    """A standing brief a seat can wear. See hive/lenses.py."""
+
+    __tablename__ = "lenses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    category: Mapped[str] = mapped_column(String(32), default="general")
+    text: Mapped[str] = mapped_column(Text)
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PanelTemplate(Base):
+    """Ordered list of lens names assigned to answering seats in pick order."""
+
+    __tablename__ = "panel_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    task_type: Mapped[str] = mapped_column(String(32), default="general")
+    description: Mapped[str] = mapped_column(String(200), default="")
+    lens_names: Mapped[list] = mapped_column(JSON, default=list)
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class SeatPreset(Base):
@@ -127,6 +156,9 @@ class HiveSession(Base):
     budget_usd: Mapped[float] = mapped_column(Float, default=1.0)
     spent_usd: Mapped[float] = mapped_column(Float, default=0.0)
     judge_member_id: Mapped[int | None] = mapped_column(ForeignKey("hive_members.id"), nullable=True)
+    # Per-session lens override: {member_id: {"name": ..., "text": ...}}. Empty = use each seat's default.
+    lenses: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    devils_advocate: Mapped[bool] = mapped_column(Boolean, default=False)
     verdict: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     halt_reason: Mapped[str] = mapped_column(String(256), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -147,7 +179,8 @@ class HiveTurn(Base):
     round_no: Mapped[int] = mapped_column(Integer)
     phase: Mapped[str] = mapped_column(String(16))  # answer | critique | revise | judge
     member_id: Mapped[int] = mapped_column(ForeignKey("hive_members.id"))
-    alias: Mapped[str] = mapped_column(String(16))  # "Response A", "Response B" ...
+    alias: Mapped[str] = mapped_column(String(24))  # "Response A", "Reviewer B", "Devil's advocate" ...
+    lens_name: Mapped[str] = mapped_column(String(64), default="")
     content: Mapped[str] = mapped_column(Text)
     tokens_in: Mapped[int] = mapped_column(Integer, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, default=0)

@@ -19,10 +19,14 @@ from app.deps import Principal, require_scope
 from app.hive.estimate import estimate_session
 from app.hive.export import session_markdown
 from app.hive.orchestrator import Orchestrator, Seat
-from app.models import ApiToken, HiveMember, HiveSession, HiveTurn, SeatPreset, User
+from app.models import ApiToken, HiveMember, HiveSession, HiveTurn, Lens, PanelTemplate, SeatPreset, User
 from app.schemas import (
     BudgetStatus,
     EstimateRequest,
+    LensIn,
+    LensOut,
+    PanelIn,
+    PanelOut,
     PresetIn,
     PresetOut,
     SessionCreate,
@@ -121,6 +125,8 @@ def create_session(
         max_rounds=body.max_rounds,
         budget_usd=body.budget_usd,
         judge_member_id=body.judge_member_id,
+        lenses={str(k): v for k, v in (body.lenses or {}).items()} or None,
+        devils_advocate=body.devils_advocate,
         # Stash requested seats so the background worker (fresh DB session) can read them.
         verdict={"_requested_member_ids": body.member_ids} if body.member_ids else None,
     )
@@ -219,7 +225,13 @@ def estimate(
 ) -> dict:
     """Worst-case and likely cost for a run with these seats, using the guard's own math."""
     seats = _load_seats(db, body.member_ids)
-    est = estimate_session(seats=seats, problem=body.problem, context=body.context, max_rounds=body.max_rounds)
+    est = estimate_session(
+        seats=seats,
+        problem=body.problem,
+        context=body.context,
+        max_rounds=body.max_rounds,
+        devils_advocate=body.devils_advocate,
+    )
     est["global"] = budget.global_status(db)
     return est
 
@@ -271,4 +283,68 @@ def delete_preset(preset_id: int, db: Session = Depends(get_db), p: Principal = 
         raise HTTPException(status_code=404, detail="Preset not found")
     db.delete(row)
     log_event(db, actor=p.name, action="preset_delete", detail=row.name)
+    db.commit()
+
+
+# ---- lenses & panels ----
+@router.get("/lenses", response_model=list[LensOut])
+def list_lenses(db: Session = Depends(get_db), _: Principal = Depends(require_scope("read"))):
+    return db.query(Lens).order_by(Lens.category, Lens.name).all()
+
+
+@router.post("/lenses", response_model=LensOut, status_code=201)
+def save_lens(body: LensIn, db: Session = Depends(get_db), p: Principal = Depends(require_scope("run"))):
+    row = db.query(Lens).filter(Lens.name == body.name.strip()).first()
+    if row is None:
+        row = Lens(name=body.name.strip(), builtin=False)
+        db.add(row)
+    row.category = body.category.strip() or "general"
+    row.text = body.text.strip()
+    log_event(db, actor=p.name, action="lens_save", detail=row.name)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/lenses/{lens_id}", status_code=204)
+def delete_lens(lens_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_scope("run"))):
+    row = db.query(Lens).filter(Lens.id == lens_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Lens not found")
+    db.delete(row)
+    log_event(db, actor=p.name, action="lens_delete", detail=row.name)
+    db.commit()
+
+
+@router.get("/panels", response_model=list[PanelOut])
+def list_panels(db: Session = Depends(get_db), _: Principal = Depends(require_scope("read"))):
+    return db.query(PanelTemplate).order_by(PanelTemplate.task_type, PanelTemplate.name).all()
+
+
+@router.post("/panels", response_model=PanelOut, status_code=201)
+def save_panel(body: PanelIn, db: Session = Depends(get_db), p: Principal = Depends(require_scope("run"))):
+    known = {r.name for r in db.query(Lens.name).all()}
+    missing = [n for n in body.lens_names if n not in known]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Unknown lens(es): {missing}")
+    row = db.query(PanelTemplate).filter(PanelTemplate.name == body.name.strip()).first()
+    if row is None:
+        row = PanelTemplate(name=body.name.strip(), builtin=False)
+        db.add(row)
+    row.task_type = body.task_type
+    row.description = body.description.strip()[:200]
+    row.lens_names = body.lens_names
+    log_event(db, actor=p.name, action="panel_save", detail=row.name)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/panels/{panel_id}", status_code=204)
+def delete_panel(panel_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_scope("run"))):
+    row = db.query(PanelTemplate).filter(PanelTemplate.id == panel_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Panel not found")
+    db.delete(row)
+    log_event(db, actor=p.name, action="panel_delete", detail=row.name)
     db.commit()

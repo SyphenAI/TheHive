@@ -34,13 +34,13 @@ from app.services.context import fit_context
 from app.services.llm import ChatError, HttpTransport, Transport
 from app.services.registry import load_registry, rough_token_count
 
-from . import prompts
+from . import lenses, prompts
 
 logger = logging.getLogger("thehive.orchestrator")
 
 ALIAS_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-MAX_OUTPUT_TOKENS = {"answer": 2200, "critique": 1500, "redteam": 1500, "revise": 2600, "judge": 2500}
-TEMPERATURE = {"answer": 0.7, "critique": 0.3, "redteam": 0.6, "revise": 0.5, "judge": 0.0}
+MAX_OUTPUT_TOKENS = {"answer": 2200, "critique": 1500, "redteam": 1500, "advocate": 1200, "revise": 2600, "judge": 2500}
+TEMPERATURE = {"answer": 0.7, "critique": 0.3, "redteam": 0.6, "advocate": 0.5, "revise": 0.5, "judge": 0.0}
 
 
 class HiveHalted(Exception):
@@ -118,7 +118,7 @@ class Orchestrator:
                 round_no=1,
                 phase="answer",
                 alias=aliases[seat.member.id],
-                system=prompts.ANSWER_SYSTEM,
+                system=self._with_lens(state, seat, prompts.ANSWER_SYSTEM),
                 user=user,
             )
             if text is not None:
@@ -150,7 +150,7 @@ class Orchestrator:
                     round_no=round_no,
                     phase="critique",
                     alias=critic_aliases[seat.member.id],
-                    system=prompts.CRITIQUE_SYSTEM,
+                    system=self._with_lens(state, seat, prompts.CRITIQUE_SYSTEM),
                     user=user,
                 )
                 if text:
@@ -168,11 +168,29 @@ class Orchestrator:
                     round_no=round_no,
                     phase="redteam",
                     alias=rt_aliases[seat.member.id],
-                    system=prompts.REDTEAM_SYSTEM,
+                    system=self._with_lens(state, seat, prompts.REDTEAM_SYSTEM),
                     user=user,
                 )
                 if text:
                     critiques[rt_aliases[seat.member.id]] = text
+
+        if getattr(state.session, "devils_advocate", False) and critics and len(responses) >= 2:
+            # One critic (rotating by round) argues FOR the responses, so the majority view earns its win.
+            da = critics[(round_no - 2) % len(critics)]
+            user = lenses.DEVILS_ADVOCATE_USER.format(
+                problem=state.session.problem, context_block=ctx, responses_block=prompts.responses_block(responses)
+            )
+            text = self._call(
+                state,
+                da,
+                round_no=round_no,
+                phase="advocate",
+                alias="Devil's advocate",
+                system=lenses.DEVILS_ADVOCATE_SYSTEM,
+                user=user,
+            )
+            if text:
+                critiques["Devil's advocate"] = text
 
         state.session.verdict = None
         # Stash alias map for revise so each seat knows its own alias.
@@ -198,7 +216,13 @@ class Orchestrator:
                 critiques_block=prompts.critiques_block(critiques),
             )
             text = self._call(
-                state, seat, round_no=round_no, phase="revise", alias=own_alias, system=prompts.REVISE_SYSTEM, user=user
+                state,
+                seat,
+                round_no=round_no,
+                phase="revise",
+                alias=own_alias,
+                system=self._with_lens(state, seat, prompts.REVISE_SYSTEM),
+                user=user,
             )
             if text:
                 state.answers[seat.member.id] = text
@@ -256,6 +280,7 @@ class Orchestrator:
             logger.info("seat %s: prompt truncated to fit %s-token window", seat.label, info.context)
         tokens_in_est = rough_token_count(system) + rough_token_count(user)
 
+        lens_name = "" if phase in ("judge", "advocate") else self._lens(state, seat)[0]
         turn = HiveTurn(
             session_id=session.id,
             round_no=round_no,
@@ -264,6 +289,7 @@ class Orchestrator:
             alias=alias,
             content="",
             state="pending",
+            lens_name=lens_name,
         )
         self.db.add(turn)
         self.db.commit()
@@ -384,6 +410,17 @@ class Orchestrator:
         turn.state = "error" if error else "done"
         turn.finished_at = datetime.now(UTC)
         self.db.commit()
+
+    def _lens(self, state: RunState, seat: Seat) -> tuple[str, str]:
+        """Session override wins, then the seat's default. Returns (name, text)."""
+        ov = (state.session.lenses or {}).get(str(seat.member.id)) or (state.session.lenses or {}).get(seat.member.id)
+        if isinstance(ov, dict) and (ov.get("text") or "").strip():
+            return (ov.get("name") or "", ov["text"])
+        return (getattr(seat.member, "lens_name", "") or "", getattr(seat.member, "lens_text", "") or "")
+
+    def _with_lens(self, state: RunState, seat: Seat, system: str) -> str:
+        name, text = self._lens(state, seat)
+        return system + lenses.lens_block(name, text)
 
     def _aliases(self, seats: list[Seat], prefix: str = "Response") -> dict[int, str]:
         order = list(seats)
